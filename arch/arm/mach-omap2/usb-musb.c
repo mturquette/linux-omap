@@ -32,6 +32,16 @@
 #include <plat/usb.h>
 #include "control.h"
 
+#define OTG_SYSCONFIG	(OMAP34XX_HSUSB_OTG_BASE + 0x404)
+
+static void __init usb_musb_pm_init(void)
+{
+	/* Ensure force-idle mode for OTG controller */
+	if (cpu_is_omap34xx())
+		omap_writel(0, OTG_SYSCONFIG);
+}
+
+
 #if defined(CONFIG_USB_MUSB_OMAP2PLUS) || defined (CONFIG_USB_MUSB_AM35X)
 
 static void am35x_musb_reset(void)
@@ -214,10 +224,13 @@ void __init usb_musb_init(struct omap_musb_board_data *board_data)
 
 	if (platform_device_register(&musb_device) < 0)
 		printk(KERN_ERR "Unable to register HS-USB (MUSB) device\n");
+
+	usb_musb_pm_init();
 }
 
 #else
 void __init usb_musb_init(struct omap_musb_board_data *board_data)
 {
+	usb_musb_pm_init();
 }
 #endif /* CONFIG_USB_MUSB_SOC */
