@@ -20,7 +20,7 @@
 /* Standard headers */
 #include <linux/types.h>
 #include <linux/module.h>
-
+#include <linux/slab.h>
 /* Utils headers */
 #include <linux/vmalloc.h>
 #include <syslink/atomic_linux.h>

@@ -50,6 +50,7 @@
 #include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/vmalloc.h>
+#include <linux/slab.h>
 #include <asm/page.h>
 #include "dmm4430.h"
 

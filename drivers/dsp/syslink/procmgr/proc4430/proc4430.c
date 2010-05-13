@@ -23,6 +23,7 @@
 #include <linux/uaccess.h>
 #include <linux/io.h>
 #include <linux/delay.h>
+#include <linux/slab.h>
 
 /* Module level headers */
 #include "../procdefs.h"

@@ -26,7 +26,7 @@
 #include <linux/moduleparam.h>
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
-
+#include <linux/slab.h>
 #include <ipc_ioctl.h>
 #include <nameserver.h>
 

@@ -18,6 +18,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/vmalloc.h>
+#include <linux/slab.h>
 #include <asm/atomic.h>
 
 /* Module level headers */

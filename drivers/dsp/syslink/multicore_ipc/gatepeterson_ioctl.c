@@ -21,6 +21,7 @@
 #include <linux/bug.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/slab.h>
 #include <gatepeterson.h>
 #include <gatepeterson_ioctl.h>
 #include <sharedregion.h>

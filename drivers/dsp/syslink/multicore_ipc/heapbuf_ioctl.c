@@ -21,6 +21,7 @@
 #include <linux/bug.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/slab.h>
 #include <heap.h>
 #include <heapbuf.h>
 #include <heapbuf_ioctl.h>
