@@ -31,6 +31,7 @@
 #include <procmgr.h>
 #include "../procmgr_drvdefs.h"
 #include "proc4430.h"
+#include "../../ipu_pm/ipu_pm.h"
 #include "dmm4430.h"
 #include <syslink/multiproc.h>
 #include <syslink/ducatienabler.h>
@@ -783,7 +784,7 @@ int proc4430_control(void *handle, int cmd, void *arg)
 	switch (cmd) {
 	case PM_SUSPEND:
 	case PM_RESUME:
-		retval = proc4430_drv_pm_notifications(cmd);
+		retval = ipu_pm_notifications(cmd);
 		break;
 	default:
 		printk(KERN_ERR "Invalid notification\n");
