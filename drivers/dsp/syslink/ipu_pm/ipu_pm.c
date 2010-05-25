@@ -39,10 +39,12 @@
 #include <linux/gpio.h>
 #include <linux/semaphore.h>
 #include <linux/jiffies.h>
+#include <linux/clk.h>
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
 #include <plat/dma.h>
 #include <plat/dmtimer.h>
+#include <plat/clock.h>
 
 /** ============================================================================
  *  Macros and types
@@ -66,6 +68,9 @@ int pm_gptimer_counter;
 int pm_gpio_num;
 int pm_gpio_counter;
 
+int pm_i2c_bus_num;
+int pm_i2c_bus_counter;
+
 int pm_sdmachan_num;
 int pm_sdmachan_counter;
 int pm_sdmachan_dummy;
@@ -79,6 +84,7 @@ int ipu_timer_list[NUM_IPU_TIMERS] = {
 	GP_TIMER_11};
 
 struct omap_dm_timer *p_gpt;
+struct clk *p_i2c_clk;
 
 /** ============================================================================
  *  Forward declarations of internal functions
@@ -91,11 +97,17 @@ inline int ipu_pm_get_sdma_chan(int proc_id, unsigned rcb_num);
 /* Function for get gptimers from PRCM */
 inline int ipu_pm_get_gptimer(unsigned rcb_num);
 
+/* Function to get an i2c bus */
+inline int ipu_pm_get_i2c_bus(unsigned rcb_num);
+
 /* Function for release sdma channels to PRCM */
 inline void ipu_pm_rel_sdma_chan(unsigned rcb_num);
 
 /* Function for release gptimer to PRCM */
 inline void ipu_pm_rel_gptimer(unsigned rcb_num);
+
+/* Function to release an i2c bus */
+inline void ipu_pm_rel_i2c_bus(unsigned rcb_num);
 
 /** ============================================================================
  *  Globals
@@ -178,6 +190,21 @@ void ipu_pm_callback(short int procId,
 		}
 		break;
 	case I2C:
+		if (pm_action_type == PM_REQUEST_RESOURCE) {
+			pm_i2c_bus_num =
+				ipu_pm_get_i2c_bus(pm_msg.fields.rcb_num);
+			if (pm_i2c_bus_num < 0) {
+				/* i2c bus/clock for Ducati unavailable */
+				printk(KERN_ERR "i2c error\n");
+				/* Update the payload with the failure msg */
+				pm_msg.fields.msg_type = PM_REQUEST_FAIL;
+				pm_msg.fields.parm = PM_NO_I2C;
+				break;
+			}
+		}
+		if (pm_action_type == PM_RELEASE_RESOURCE)
+			ipu_pm_rel_i2c_bus(pm_msg.fields.rcb_num);
+		break;
 	case DUCATI:
 	case IVA_HD:
 	case ISS:
@@ -391,6 +418,40 @@ inline int ipu_pm_get_gptimer(unsigned rcb_num)
 }
 
 /*
+  Function to get an i2c clock/bus
+ *
+ */
+inline int ipu_pm_get_i2c_bus(unsigned rcb_num)
+{
+	struct rcb_block *rcb_p;
+	int i2c_clk_status;
+	char i2c_name[10];
+
+	/* Get pointer to the proper RCB */
+	if (WARN_ON((rcb_num < RCB_MIN) || (rcb_num > RCB_MAX)))
+		return PM_FAILURE;
+	rcb_p = (struct rcb_block *)&rcb_table->rcb[rcb_num];
+	pm_i2c_bus_num = rcb_p->fill9;
+	if (WARN_ON((pm_i2c_bus_num <= I2C_BUS_MIN) ||
+			(pm_i2c_bus_num > I2C_BUS_MAX)))
+		return PM_FAILURE;
+
+	/* building the name for i2c_clk */
+	sprintf(i2c_name, "i2c%d_fck", pm_i2c_bus_num);
+
+	/* Request resource using PRCM API */
+	p_i2c_clk = omap_clk_get_by_name(i2c_name);
+	if (p_i2c_clk == 0)
+		return PM_FAILURE;
+	i2c_clk_status = clk_enable(p_i2c_clk);
+	if (i2c_clk_status != 0)
+		return PM_FAILURE;
+	rcb_p->mod_base_addr = (unsigned)p_i2c_clk;
+	pm_i2c_bus_counter++;
+	return PM_SUCCESS;
+}
+
+/*
   Function for release sdma channels to PRCM
  *
  */
@@ -433,5 +494,27 @@ inline void ipu_pm_rel_gptimer(unsigned rcb_num)
 		omap_dm_timer_free(p_gpt);
 	rcb_p->mod_base_addr = 0;
 	pm_gptimer_counter--;
+}
+
+/*
+  Function to release an i2c clock/bus
+ *
+ */
+inline void ipu_pm_rel_i2c_bus(unsigned rcb_num)
+{
+	struct rcb_block *rcb_p;
+
+	/* Get pointer to the proper RCB */
+	if (WARN_ON((rcb_num < RCB_MIN) || (rcb_num > RCB_MAX))) {
+		printk(KERN_INFO "Invalid RCB number\n");
+		return;
+	}
+	rcb_p = (struct rcb_block *)&rcb_table->rcb[rcb_num];
+	p_i2c_clk = (struct clk *)rcb_p->mod_base_addr;
+
+	/* Release resource using PRCM API */
+	clk_disable(p_i2c_clk);
+	rcb_p->mod_base_addr = 0;
+	pm_i2c_bus_counter--;
 }
 

@@ -97,6 +97,9 @@
 #define DATA_MAX (RCB_SIZE - 4)
 #define DATAX_MAX (RCB_SIZE - 5)
 #define SDMA_CHANNELS_MAX 16
+#define I2C_BUS_MIN 1
+#define I2C_BUS_MAX 4
+
 
 #define GP_TIMER_3 3
 #define GP_TIMER_4 4
@@ -116,7 +119,8 @@
 enum pm_failure_codes{
 	PM_INSUFFICIENT_CHANNELS = 1,
 	PM_NO_GPTIMER,
-	PM_NO_GPIO
+	PM_NO_GPIO,
+	PM_NO_I2C
 };
 
 enum pm_msgtype_codes{PM_NULLMSG,
