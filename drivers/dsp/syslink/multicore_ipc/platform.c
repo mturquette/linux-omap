@@ -20,7 +20,7 @@
 #include <linux/types.h>
 #include <linux/module.h>
 #include <linux/delay.h>
-
+#include <linux/slab.h>
 
 /* SysLink device specific headers */
 #include "../procmgr/proc4430/proc4430.h"
