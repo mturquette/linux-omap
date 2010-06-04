@@ -23,6 +23,7 @@
 #include <linux/list.h>
 #include <linux/io.h>
 #include <linux/module.h>
+#include <linux/slab.h>
 #include <plat/mailbox.h>
 
 #include <syslink/multiproc.h>

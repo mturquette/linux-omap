@@ -20,6 +20,7 @@
 #include <linux/mm.h>
 #include <linux/uaccess.h>
 #include <linux/io.h>
+#include <linux/slab.h>
 #include <asm/pgtable.h>
 
 #include <syslink/atomic_linux.h>
