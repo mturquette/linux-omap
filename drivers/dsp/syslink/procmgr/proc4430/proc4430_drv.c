@@ -21,6 +21,7 @@
 #include <linux/device.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/uaccess.h>
 #include <linux/platform_device.h>
