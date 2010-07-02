@@ -25,13 +25,16 @@
 #include <linux/err.h>
 #include <linux/clk.h>
 #include <linux/io.h>
+#include <linux/cpu.h>
 
 #include <mach/hardware.h>
 #include <plat/clock.h>
 #include <asm/system.h>
+#include <asm/cpu.h>
 #include <plat/omap_device.h>
 
-#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_OMAP_PM_NONE)
+#if defined(CONFIG_ARCH_OMAP3) || defined(CONFIG_ARCH_OMAP4) \
+				&& !defined(CONFIG_OMAP_PM_NONE)
 #include <plat/omap-pm.h>
 #include <plat/opp.h>
 #endif
@@ -49,6 +52,10 @@ static struct cpufreq_frequency_table *freq_table;
 #endif
 
 static struct clk *mpu_clk;
+#ifdef CONFIG_SMP
+static cpumask_var_t omap_cpus;
+int cpus_initialized;
+#endif
 
 /* TODO: Add support for SDRAM timing changes */
 
@@ -74,7 +81,7 @@ unsigned int omap_getspeed(unsigned int cpu)
 {
 	unsigned long rate;
 
-	if (cpu)
+	if (!cpu_is_omap44xx() && cpu)
 		return 0;
 
 	rate = clk_get_rate(mpu_clk) / 1000;
@@ -85,15 +92,22 @@ static int omap_target(struct cpufreq_policy *policy,
 		       unsigned int target_freq,
 		       unsigned int relation)
 {
-#ifdef CONFIG_ARCH_OMAP1
+#if defined(CONFIG_ARCH_OMAP1) || defined(CONFIG_ARCH_OMAP4)
 	struct cpufreq_freqs freqs;
 #endif
-#if defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_OMAP_PM_NONE)
+#if defined(CONFIG_ARCH_OMAP3) || defined(CONFIG_ARCH_OMAP4) && \
+		!defined(CONFIG_OMAP_PM_NONE)
 	unsigned long freq;
 	struct device *mpu_dev = omap2_get_mpuss_device();
 #endif
 	int ret = 0;
 
+#ifdef CONFIG_SMP
+	int i;
+	/* Wait untill all CPU's are initialized
+	if (unlikely(cpus_initialized < num_online_cpus()))
+		return ret; */
+#endif
 	/* Ensure desired rate is within allowed range.  Some govenors
 	 * (ondemand) will just pass target_freq=0 to get the minimum. */
 	if (target_freq < policy->min)
@@ -115,10 +129,28 @@ static int omap_target(struct cpufreq_policy *policy,
 #endif
 	ret = clk_set_rate(mpu_clk, freqs.new * 1000);
 	cpufreq_notify_transition(&freqs, CPUFREQ_POSTCHANGE);
-#elif defined(CONFIG_ARCH_OMAP3) && !defined(CONFIG_OMAP_PM_NONE)
+#elif defined(CONFIG_ARCH_OMAP3) || defined(CONFIG_ARCH_OMAP4) && \
+		!defined(CONFIG_OMAP_PM_NONE)
+#ifdef CONFIG_SMP
+	freqs.old = omap_getspeed(policy->cpu);
+	freqs.cpu = policy->cpu;
+#endif
 	freq = target_freq * 1000;
 	if (opp_find_freq_ceil(mpu_dev, &freq))
 		omap_device_set_rate(mpu_dev, mpu_dev, freq);
+#ifdef CONFIG_SMP
+	/*
+	 * Note that loops_per_jiffy is not updated on SMP systems in
+	 * cpufreq driver. So, update the per-CPU loops_per_jiffy value
+	 * on frequency transition. We need to update all dependent cpus
+	 */
+	freqs.new = omap_getspeed(policy->cpu);
+/*	for_each_cpu(i, policy->cpus) { */
+	for (i = 0; i < 2 ; i++)
+		per_cpu(cpu_data, i).loops_per_jiffy =
+		cpufreq_scale(per_cpu(cpu_data, i).loops_per_jiffy,
+				freqs.old, freqs.new);
+#endif
 #endif
 	return ret;
 }
@@ -126,8 +158,11 @@ static int omap_target(struct cpufreq_policy *policy,
 static int __init omap_cpu_init(struct cpufreq_policy *policy)
 {
 	int result = 0;
+	if (cpu_is_omap44xx())
+		mpu_clk = clk_get(NULL, "dpll_mpu_ck");
+	else
+		mpu_clk = clk_get(NULL, MPU_CLK);
 
-	mpu_clk = clk_get(NULL, MPU_CLK);
 	if (IS_ERR(mpu_clk))
 		return PTR_ERR(mpu_clk);
 
@@ -136,7 +171,7 @@ static int __init omap_cpu_init(struct cpufreq_policy *policy)
 
 	policy->cur = policy->min = policy->max = omap_getspeed(0);
 
-	if (!cpu_is_omap34xx()) {
+	if (!(cpu_is_omap34xx() || cpu_is_omap44xx())) {
 		clk_init_cpufreq_table(&freq_table);
 	} else {
 		struct device *mpu_dev = omap2_get_mpuss_device();
@@ -162,6 +197,12 @@ static int __init omap_cpu_init(struct cpufreq_policy *policy)
 	/* FIXME: what's the actual transition time? */
 	policy->cpuinfo.transition_latency = 300 * 1000;
 
+#ifdef CONFIG_SMP
+	policy->shared_type = CPUFREQ_SHARED_TYPE_ANY;
+	cpumask_or(omap_cpus, cpumask_of(policy->cpu), omap_cpus);
+	cpumask_copy(policy->cpus, omap_cpus);
+	cpus_initialized++;
+#endif
 	return 0;
 }
 
