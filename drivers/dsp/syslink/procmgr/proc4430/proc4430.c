@@ -617,7 +617,8 @@ int proc4430_write(void *handle, u32 proc_addr, u32 *num_bytes,
 		return -ENODEV;
 	}
 
-	/* TODO */
+	buffer = memcpy(buffer, (void *)proc_addr, *num_bytes);
+
 	return retval;
 }
 
