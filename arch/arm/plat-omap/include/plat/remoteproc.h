@@ -50,6 +50,12 @@ struct omap_rproc_clk_t {
 	const char *con_id;
 };
 
+/* RPROC events. */
+enum {
+	OMAP_RPROC_START,
+	OMAP_RPROC_STOP,
+};
+
 struct omap_rproc_platform_data {
 	struct omap_rproc_ops *ops;
 	char *name;
@@ -63,6 +69,8 @@ struct omap_rproc {
 	atomic_t count;
 	int state;
 	int minor;
+	struct blocking_notifier_head	notifier;
+	struct mutex lock;
 };
 
 struct omap_rproc_start_args {
@@ -71,6 +79,13 @@ struct omap_rproc_start_args {
 
 extern int rproc_start(struct omap_rproc *rproc, const void __user *arg);
 extern int rproc_stop(struct omap_rproc *rproc);
+
+extern int omap_rproc_register_notifier(struct omap_rproc *rproc,
+					struct notifier_block *nb);
+extern int omap_rproc_unregister_notifier(struct omap_rproc *rproc,
+					struct notifier_block *nb);
+extern int omap_rproc_notify_event(struct omap_rproc *obj, int event,
+								void *data);
 
 extern struct omap_rproc *omap_rproc_get(const char *name);
 extern void omap_rproc_put(struct omap_rproc *obj);
