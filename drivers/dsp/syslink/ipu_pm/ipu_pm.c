@@ -72,76 +72,76 @@
  *  ============================================================================
  */
 
-/* Function to request a resource */
+/* Request a resource on behalf of an IPU client */
 static inline int ipu_pm_req_res(u32 res_type, u32 proc_id, u32 rcb_num);
 
-/* Function to release a resource */
+/* Release a resource on behalf of an IPU client */
 static inline int ipu_pm_rel_res(u32 res_type, u32 proc_id, u32 rcb_num);
 
-/* Function to get sdma channels from PRCM */
+/* Request a sdma channels on behalf of an IPU client */
 static inline int ipu_pm_get_sdma_chan(int proc_id, u32 rcb_num);
 
-/* Function to get gptimers from PRCM */
+/* Request a gptimer on behalf of an IPU client */
 static inline int ipu_pm_get_gptimer(int proc_id, u32 rcb_num);
 
-/* Function to get i2c buses from PRCM */
+/* Request an i2c bus on behalf of an IPU client */
 static inline int ipu_pm_get_i2c_bus(int proc_id, u32 rcb_num);
 
-/* Function to get gpios from PRCM */
+/* Request a gpio on behalf of an IPU client */
 static inline int ipu_pm_get_gpio(int proc_id, u32 rcb_num);
 
-/* Function to get regulators from PRCM */
+/* Request a regulator on behalf of an IPU client */
 static inline int ipu_pm_get_regulator(int proc_id, u32 rcb_num);
 
-/* Function to get Aux clk */
+/* Request an Aux clk on behalf of an IPU client */
 static inline int ipu_pm_get_aux_clk(int proc_id, u32 rcb_num);
 
-/* Function to get sys m3 */
+/* Request sys m3 on behalf of an IPU client */
 static inline int ipu_pm_get_sys_m3(int proc_id, u32 rcb_num);
 
-/* Function to get app m3 */
+/* Request app m3 on behalf of an IPU client */
 static inline int ipu_pm_get_app_m3(int proc_id, u32 rcb_num);
 
-/* Function to get L3 Bus */
+/* Request L3 Bus on behalf of an IPU client */
 static inline int ipu_pm_get_l3_bus(int proc_id, u32 rcb_num);
 
-/* Function to get IVA HD */
+/* Request IVA HD on behalf of an IPU client */
 static inline int ipu_pm_get_iva_hd(int proc_id, u32 rcb_num);
 
-/* Function to get ISS */
+/* Request ISS on behalf of an IPU client */
 static inline int ipu_pm_get_iss(int proc_id, u32 rcb_num);
 
-/* Function to release sdma channels to PRCM */
+/* Release a sdma on behalf of an IPU client */
 static inline int ipu_pm_rel_sdma_chan(int proc_id, u32 rcb_num);
 
-/* Function to release gptimers to PRCM */
+/* Release a gptimer on behalf of an IPU client */
 static inline int ipu_pm_rel_gptimer(int proc_id, u32 rcb_num);
 
-/* Function to release i2c buses to PRCM */
+/* Release an i2c buses on behalf of an IPU client */
 static inline int ipu_pm_rel_i2c_bus(int proc_id, u32 rcb_num);
 
-/* Function to release gpios from PRCM */
+/* Release a gpio on behalf of an IPU client */
 static inline int ipu_pm_rel_gpio(int proc_id, u32 rcb_num);
 
-/* Function to release regulators to PRCM */
+/* Release a regulator on behalf of an IPU client */
 static inline int ipu_pm_rel_regulator(int proc_id, u32 rcb_num);
 
-/* Function to release auxiliar clock */
+/* Release an Aux clk on behalf of an IPU client */
 static inline int ipu_pm_rel_aux_clk(int proc_id, u32 rcb_num);
 
-/* Function to release sys m3 */
+/* Release sys m3 on behalf of an IPU client */
 static inline int ipu_pm_rel_sys_m3(int proc_id, u32 rcb_num);
 
-/* Function to release app m3 */
+/* Release app m3 on behalf of an IPU client */
 static inline int ipu_pm_rel_app_m3(int proc_id, u32 rcb_num);
 
-/* Function to release L3 Bus */
+/* Release L3 Bus on behalf of an IPU client */
 static inline int ipu_pm_rel_l3_bus(int proc_id, u32 rcb_num);
 
-/* Function to release IVA HD */
+/* Release IVA HD on behalf of an IPU client */
 static inline int ipu_pm_rel_iva_hd(int proc_id, u32 rcb_num);
 
-/* Function to release ISS */
+/* Release ISS on behalf of an IPU client */
 static inline int ipu_pm_rel_iss(int proc_id, u32 rcb_num);
 
 /** ============================================================================
@@ -153,6 +153,8 @@ static inline int ipu_pm_rel_iss(int proc_id, u32 rcb_num);
 static u32 GPTIMER_USE_MASK = 0xFFFF;
 static u32 I2C_USE_MASK = 0xFFFF;
 static u32 AUX_CLK_USE_MASK = 0xFFFF;
+
+/* Previous voltage value of secondary camera regulator */
 static u32 cam2_prev_volt;
 
 static struct ipu_pm_object *pm_handle_appm3;
@@ -205,7 +207,7 @@ static struct ipu_pm_params pm_params = {
 } ;
 
 /*
-  Function to request a resource from PRCM
+  Request a resource on behalf of an IPU client
  *
  */
 static inline int ipu_pm_req_res(u32 res_type, u32 proc_id, u32 rcb_num)
@@ -255,7 +257,7 @@ static inline int ipu_pm_req_res(u32 res_type, u32 proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release a resource to PRCM
+  Release a resource on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_res(u32 res_type, u32 proc_id, u32 rcb_num)
@@ -549,7 +551,7 @@ int ipu_pm_notifications(enum pm_event_type event_type)
 EXPORT_SYMBOL(ipu_pm_notifications);
 
 /*
-  Function to get sdma channels from PRCM
+  Request a sdma channels on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_sdma_chan(int proc_id, u32 rcb_num)
@@ -607,7 +609,7 @@ clean_sdma:
 }
 
 /*
-  Function to get gptimers from PRCM
+  Request a gptimer on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_gptimer(int proc_id, u32 rcb_num)
@@ -656,7 +658,7 @@ static inline int ipu_pm_get_gptimer(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get an i2c bus
+  Request an i2c bus on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_i2c_bus(int proc_id, u32 rcb_num)
@@ -712,7 +714,7 @@ static inline int ipu_pm_get_i2c_bus(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get gpio
+  Request a gpio on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_gpio(int proc_id, u32 rcb_num)
@@ -747,7 +749,7 @@ static inline int ipu_pm_get_gpio(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get a regulator
+  Request a regulator on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_regulator(int proc_id, u32 rcb_num)
@@ -809,7 +811,7 @@ static inline int ipu_pm_get_regulator(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get auxiliar clock
+  Request an Aux clk on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_aux_clk(int proc_id, u32 rcb_num)
@@ -860,7 +862,7 @@ static inline int ipu_pm_get_aux_clk(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get sys m3
+  Request sys m3 on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_sys_m3(int proc_id, u32 rcb_num)
@@ -891,7 +893,7 @@ static inline int ipu_pm_get_sys_m3(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get app m3
+  Request app m3 on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_app_m3(int proc_id, u32 rcb_num)
@@ -922,7 +924,7 @@ static inline int ipu_pm_get_app_m3(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get L3 Bus
+  Request L3 Bus on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_l3_bus(int proc_id, u32 rcb_num)
@@ -953,7 +955,7 @@ static inline int ipu_pm_get_l3_bus(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get IVA HD
+  Request IVA HD on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_iva_hd(int proc_id, u32 rcb_num)
@@ -984,7 +986,7 @@ static inline int ipu_pm_get_iva_hd(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to get ISS
+  Request ISS on behalf of an IPU client
  *
  */
 static inline int ipu_pm_get_iss(int proc_id, u32 rcb_num)
@@ -1015,7 +1017,7 @@ static inline int ipu_pm_get_iss(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release sdma channels to PRCM
+  Release a sdma on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_sdma_chan(int proc_id, u32 rcb_num)
@@ -1053,7 +1055,7 @@ static inline int ipu_pm_rel_sdma_chan(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release gptimer to PRCM
+  Release a gptimer on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_gptimer(int proc_id, u32 rcb_num)
@@ -1098,7 +1100,7 @@ static inline int ipu_pm_rel_gptimer(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release an i2c bus
+  Release an i2c buses on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_i2c_bus(int proc_id, u32 rcb_num)
@@ -1143,7 +1145,7 @@ static inline int ipu_pm_rel_i2c_bus(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release gpio
+  Release a gpio on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_gpio(int proc_id, u32 rcb_num)
@@ -1175,7 +1177,7 @@ static inline int ipu_pm_rel_gpio(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release a regulator
+  Release a regulator on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_regulator(int proc_id, u32 rcb_num)
@@ -1218,7 +1220,7 @@ static inline int ipu_pm_rel_regulator(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release auxiliar clock
+  Release an Aux clk on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_aux_clk(int proc_id, u32 rcb_num)
@@ -1265,7 +1267,7 @@ static inline int ipu_pm_rel_aux_clk(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release sys m3
+  Release sys m3 on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_sys_m3(int proc_id, u32 rcb_num)
@@ -1296,7 +1298,7 @@ static inline int ipu_pm_rel_sys_m3(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release app m3
+  Release app m3 on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_app_m3(int proc_id, u32 rcb_num)
@@ -1327,7 +1329,7 @@ static inline int ipu_pm_rel_app_m3(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release L3 Bus
+  Release L3 Bus on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_l3_bus(int proc_id, u32 rcb_num)
@@ -1359,7 +1361,7 @@ static inline int ipu_pm_rel_l3_bus(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release IVA HD
+  Release IVA HD on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_iva_hd(int proc_id, u32 rcb_num)
@@ -1390,7 +1392,7 @@ static inline int ipu_pm_rel_iva_hd(int proc_id, u32 rcb_num)
 }
 
 /*
-  Function to release ISS
+  Release ISS on behalf of an IPU client
  *
  */
 static inline int ipu_pm_rel_iss(int proc_id, u32 rcb_num)
@@ -1734,11 +1736,11 @@ EXPORT_SYMBOL(ipu_pm_get_config);
 /*
   Function to setup ipu pm object
   This function is called in platform_setup()
-  TODO
   This function will load the default configuration for ipu_pm
   in this function we can decide what is going to be controled
   by ipu_pm (DVFS, NOTIFICATIONS, ...) this configuration can
   can be changed on run-time.
+  Also the workqueue is created and the local mutex
  */
 int ipu_pm_setup(struct ipu_pm_config *cfg)
 {
@@ -1747,8 +1749,8 @@ int ipu_pm_setup(struct ipu_pm_config *cfg)
 	struct mutex *lock = NULL;
 
 	/* This sets the ref_count variable is not initialized, upper 16 bits is
-	* written with module Id to ensure correctness of refCount variable.
-	*/
+	  written with module Id to ensure correctness of refCount variable.
+	 */
 	atomic_cmpmask_and_set(&ipu_pm_state.ref_count,
 				IPU_PM_MAKE_MAGICSTAMP(0),
 				IPU_PM_MAKE_MAGICSTAMP(0));
@@ -1791,9 +1793,7 @@ EXPORT_SYMBOL(ipu_pm_setup);
 /*
   Function to attach ipu pm object
   This function is called in ipc_attach()
-  TODO
   This function will create the object based on the remoteproc id
-  and save the handle.
   It is also recieving the shared address pointer to use in rcb
  */
 int ipu_pm_attach(u16 remote_proc_id, void *shared_addr)
@@ -1829,10 +1829,10 @@ EXPORT_SYMBOL(ipu_pm_attach);
 
 /*
   Function to deattach ipu pm object
-  This function is called in ipc_deattach()
-  TODO
-  This function will delete the object based on the remoteproc id
-  and save the handle.
+  This function is called in ipc_detach()
+  This function will delete the object based
+  on the remoteproc id and unregister the notify
+  events used by ipu_pm module
  */
 int ipu_pm_detach(u16 remote_proc_id)
 {
@@ -1886,8 +1886,8 @@ EXPORT_SYMBOL(ipu_pm_detach);
 
 /*
   Function to destroy ipu_pm module
-  this function will destroy the shared region 1(?)
-  an all the other structs created to set the configuration
+  this function will destroy the structs
+  created to set the configuration
  */
 int ipu_pm_destroy(void)
 {
