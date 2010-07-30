@@ -31,7 +31,6 @@ struct iotlb_entry {
 struct iommu {
 	const char	*name;
 	struct module	*owner;
-	struct clk	*clk;
 	void __iomem	*regbase;
 	struct device	*dev;
 
@@ -53,6 +52,8 @@ struct iommu {
 	int (*isr)(struct iommu *obj);
 
 	void *ctx; /* iommu context: registres saved area */
+
+	struct platform_device *pdev;
 	struct cdev cdev;
 	int minor;
 };
@@ -106,8 +107,10 @@ struct iommu_functions {
 
 struct iommu_platform_data {
 	const char *name;
-	const char *clk_name;
+	const char *oh_name;
 	const int nr_tlb_entries;
+	int irq;
+	void __iomem *io_base;
 };
 
 #define IOMMU_IOC_MAGIC		'I'
