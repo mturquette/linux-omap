@@ -721,7 +721,7 @@ static int add_entry_ext(u32 *phys_addr, u32 *dsp_addr,
 
 void ducati_tlb_dump(void)
 {
-#if defined CONFIG_OMAP_IOMMU_DEBUG_MODULE
+#if 0
 	char *p;
 
 	p = kmalloc(1000, GFP_KERNEL);
