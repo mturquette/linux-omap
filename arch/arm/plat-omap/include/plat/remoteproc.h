@@ -57,6 +57,7 @@ struct omap_rproc_platform_data {
 };
 
 struct omap_rproc {
+	const char *name;
 	struct device *dev;
 	struct cdev cdev;
 	atomic_t count;
@@ -67,6 +68,12 @@ struct omap_rproc {
 struct omap_rproc_start_args {
 	u32 start_addr;
 };
+
+extern int rproc_start(struct omap_rproc *rproc, const void __user *arg);
+extern int rproc_stop(struct omap_rproc *rproc);
+
+extern struct omap_rproc *omap_rproc_get(const char *name);
+extern void omap_rproc_put(struct omap_rproc *obj);
 
 struct omap_rproc_platform_data *omap3_get_rproc_data(void);
 int omap3_get_rproc_data_size(void);

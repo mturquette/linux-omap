@@ -42,10 +42,12 @@ static dev_t omap_rproc_dev;
 static atomic_t num_of_rprocs;
 
 
-static inline int rproc_start(struct omap_rproc *rproc, const void __user *arg)
+int rproc_start(struct omap_rproc *rproc, const void __user *arg)
 {
 	struct omap_rproc_platform_data *pdata;
 	struct omap_rproc_start_args start_args;
+
+	start_args.start_addr = 0;
 
 	if (!rproc->dev)
 		return -EINVAL;
@@ -58,10 +60,11 @@ static inline int rproc_start(struct omap_rproc *rproc, const void __user *arg)
 	if (copy_from_user(&start_args, arg, sizeof(start_args)))
 		return -EFAULT;
 #endif
-	return pdata->ops->start(rproc->dev, start_args.start_addr); }
+	return pdata->ops->start(rproc->dev, start_args.start_addr);
+}
+EXPORT_SYMBOL_GPL(rproc_start);
 
-
-static inline int rproc_stop(struct omap_rproc *rproc)
+int rproc_stop(struct omap_rproc *rproc)
 {
 	struct omap_rproc_platform_data *pdata;
 	if (!rproc->dev)
@@ -73,6 +76,7 @@ static inline int rproc_stop(struct omap_rproc *rproc)
 
 	return pdata->ops->stop(rproc->dev);
 }
+EXPORT_SYMBOL_GPL(rproc_stop);
 
 
 static inline int rproc_get_state(struct omap_rproc *rproc)
@@ -214,6 +218,8 @@ static int omap_rproc_probe(struct platform_device *pdev)
 	rproc->dev = dev;
 	rproc->minor = minor;
 	atomic_set(&rproc->count, 0);
+	rproc->name = pdata->name;
+
 	cdev_init(&rproc->cdev, &omap_rproc_fops);
 	rproc->cdev.owner = THIS_MODULE;
 	ret = cdev_add(&rproc->cdev, MKDEV(major, minor), 1);
@@ -231,7 +237,7 @@ static int omap_rproc_probe(struct platform_device *pdev)
 		dev_err(dev, "%s: device_create failed: %d\n", __func__, ret);
 		goto clean_cdev;
 	}
-+
+
 	dev_info(dev, "%s initialized %s, major: %d, base-minor: %d\n",
 			OMAP_RPROC_NAME,
 			pdata->name,
@@ -277,6 +283,42 @@ static struct platform_driver omap_rproc_driver = {
 		.owner = THIS_MODULE,
 	},
 };
+
+static int device_match_by_alias(struct device *dev, void *data)
+{
+	struct omap_rproc *obj = (struct omap_rproc *)platform_get_drvdata(
+						to_platform_device(dev));
+	const char *name = data;
+
+	pr_debug("%s: %s %s\n", __func__, obj->name, name);
+
+	return strcmp(obj->name, name) == 0;
+}
+
+struct omap_rproc *omap_rproc_get(const char *name)
+{
+	struct device *dev;
+	struct omap_rproc *rproc;
+	dev = driver_find_device(&omap_rproc_driver.driver, NULL, (void *)name,
+				 device_match_by_alias);
+	if (!dev)
+		return ERR_PTR(-ENODEV);
+	rproc = (struct omap_rproc *)platform_get_drvdata(
+						to_platform_device(dev));
+
+	dev_dbg(rproc->dev, "%s: %s\n", __func__, rproc->name);
+	return rproc;
+}
+EXPORT_SYMBOL_GPL(omap_rproc_get);
+
+void omap_rproc_put(struct omap_rproc *rproc)
+{
+	if (!rproc || IS_ERR(rproc))
+		return;
+
+	dev_dbg(rproc->dev, "%s: %s\n", __func__, rproc->name);
+}
+EXPORT_SYMBOL_GPL(omap_rproc_put);
 
 static int __init omap_rproc_init(void)
 {
