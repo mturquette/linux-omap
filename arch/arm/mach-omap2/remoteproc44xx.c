@@ -19,122 +19,44 @@
  *
  */
 #include <linux/kernel.h>
-#include <linux/delay.h>
 #include <linux/clk.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <linux/pm_runtime.h>
 #include <plat/remoteproc.h>
-#include <mach/irqs.h>
+
+
 #include <plat/omap_device.h>
+#include <plat/omap_hwmod.h>
 
-#include "cm.h"
-#include "prm.h"
-
-#define RM_M3_RST1ST				0x1
-#define RM_M3_RST2ST				0x2
-#define RM_M3_RST3ST				0x4
-#define RM_M3_REL_RST1_MASK			0x2
-#define RM_M3_REL_RST2_MASK			0x0
-#define RM_M3_AST_RST1_MASK			0x3
-#define RM_M3_AST_RST2_MASK			0x2
-
-#define M3_CLK_MOD_MODE_HW_AUTO			0x1
-#define M3_CLKTRCTRL_SW_WKUP			0x2
-#define M3_CLKTRCTRL_SW_SLEEP			0x1
-#define M3_CLKACTIVITY_MPU_M3_CLK		0x100
-
-static inline int proc44x_sysm3_start(struct omap_rproc *rproc)
+static inline int proc44x_start(struct device *dev, u32 start_addr)
 {
-	u32 reg;
-	int counter = 10;
-	struct device *dev = rproc->dev;
+	struct platform_device *pdev = to_platform_device(dev);
+	int ret = 0;
 
-	/* Module is managed automatically by HW */
-	cm_write_mod_reg(M3_CLK_MOD_MODE_HW_AUTO, OMAP4430_CM2_CORE_MOD,
-					OMAP4_CM_DUCATI_DUCATI_CLKCTRL_OFFSET);
-
-	/* Enable the M3 clock */
-	cm_write_mod_reg(M3_CLKTRCTRL_SW_WKUP, OMAP4430_CM2_CORE_MOD,
-					OMAP4_CM_DUCATI_CLKSTCTRL_OFFSET);
-	do {
-		reg = cm_read_mod_reg(OMAP4430_CM2_CORE_MOD,
-					OMAP4_CM_DUCATI_CLKSTCTRL_OFFSET);
-		if (reg & M3_CLKACTIVITY_MPU_M3_CLK) {
-			dev_info(dev, "M3 clock enabled:"
-			"OMAP4430_CM_DUCATI_CLKSTCTRL = 0x%x\n", reg);
-			break;
-		}
-		msleep(1);
-	} while (--counter);
-	if (counter == 0) {
-		dev_info(dev, "FAILED TO ENABLE DUCATI M3 CLOCK !%x\n", reg);
-		return -EFAULT;
-	}
-
-	/* De-assert RST1, and clear the Reset status */
-	dev_info(dev, "De-assert RST1\n");
-	prm_write_mod_reg(RM_M3_REL_RST1_MASK, OMAP4430_PRM_CORE_MOD,
-				OMAP4_RM_DUCATI_RSTCTRL_OFFSET);
-	while (!(prm_read_mod_reg(OMAP4430_PRM_CORE_MOD,
-		OMAP4_RM_DUCATI_RSTST_OFFSET) & RM_M3_RST1ST))
-		;
-	dev_info(dev, "RST1 released!");
-
-	prm_write_mod_reg(RM_M3_RST1ST, OMAP4430_PRM_CORE_MOD,
-				OMAP4_RM_DUCATI_RSTST_OFFSET);
+	ret = omap_device_enable(pdev);
+	if (ret)
+		goto err_start;
 
 	return 0;
+
+err_start:
+	dev_err(dev, "%s error 0x%x\n", __func__, ret);
+	return ret;
 }
 
-static inline int proc44x_appm3_start(struct omap_rproc *rproc)
+static inline int proc44x_stop(struct device *dev)
 {
-	struct device *dev = rproc->dev;
+	struct platform_device *pdev = to_platform_device(dev);
+	int ret = 0;
 
-	/* De-assert RST2, and clear the Reset status */
-	dev_info(dev, "De-assert RST2\n");
-	prm_write_mod_reg(RM_M3_REL_RST2_MASK, OMAP4430_PRM_CORE_MOD,
-				OMAP4_RM_DUCATI_RSTCTRL_OFFSET);
+	ret = omap_device_shutdown(pdev);
+	if (ret)
+		dev_err(dev, "%s err 0x%x\n", __func__, ret);
 
-	while (!(prm_read_mod_reg(OMAP4430_PRM_CORE_MOD,
-		OMAP4_RM_DUCATI_RSTST_OFFSET) & RM_M3_RST2ST))
-		;
-	dev_info(dev, "RST2 released!");
-
-	prm_write_mod_reg(RM_M3_RST2ST, OMAP4430_PRM_CORE_MOD,
-				OMAP4_RM_DUCATI_RSTST_OFFSET);
-
-	return 0;
+	return ret;
 }
 
-static inline int proc44x_sysm3_stop(struct omap_rproc *rproc)
-{
-	struct device *dev = rproc->dev;
-	u32 reg;
-
-	reg = prm_read_mod_reg(OMAP4430_PRM_CORE_MOD,
-					OMAP4_RM_DUCATI_RSTCTRL_OFFSET);
-
-	dev_info(dev, "assert RST1 reg = 0x%x\n", reg);
-	prm_write_mod_reg((reg | RM_M3_AST_RST1_MASK), OMAP4430_PRM_CORE_MOD,
-				OMAP4_RM_DUCATI_RSTCTRL_OFFSET);
-	return 0;
-}
-
-static inline int proc44x_appm3_stop(struct omap_rproc *rproc)
-{
-	struct device *dev = rproc->dev;
-	u32 reg;
-
-	reg = prm_read_mod_reg(OMAP4430_PRM_CORE_MOD,
-					OMAP4_RM_DUCATI_RSTCTRL_OFFSET);
-
-	dev_info(dev, "assert RST2 reg = 0x%x\n", reg);
-	prm_write_mod_reg((reg | RM_M3_AST_RST2_MASK), OMAP4430_PRM_CORE_MOD,
-				OMAP4_RM_DUCATI_RSTCTRL_OFFSET);
-	return 0;
-}
 
 static inline int omap4_rproc_get_state(struct omap_rproc *rproc)
 {
@@ -142,14 +64,14 @@ static inline int omap4_rproc_get_state(struct omap_rproc *rproc)
 }
 
 static struct omap_rproc_ops omap4_ducati0_ops = {
-	.start = proc44x_sysm3_start,
-	.stop = proc44x_sysm3_stop,
+	.start = proc44x_start,
+	.stop = proc44x_stop,
 	.get_state = omap4_rproc_get_state,
 };
 
 static struct omap_rproc_ops omap4_ducati1_ops = {
-	.start = proc44x_appm3_start,
-	.stop = proc44x_appm3_stop,
+	.start = proc44x_start,
+	.stop = proc44x_stop,
 	.get_state = omap4_rproc_get_state,
 };
 
@@ -162,71 +84,84 @@ static struct omap_rproc_platform_data omap4_rproc_data[] = {
 	{
 		.name = "tesla",
 		.ops = &omap4_tesla_ops,
-		.oh_name = "tesla_hwmod",
+		.oh_name = "dsp",
 	},
 	{
 		.name = "ducati-proc0",
 		.ops = &omap4_ducati0_ops,
-		.oh_name = "ducati_hwmod0",
+		.oh_name = "ipu_c0",
 	},
 	{
 		.name = "ducati-proc1",
 		.ops = &omap4_ducati1_ops,
-		.oh_name = "ducati_hwmod1",
+		.oh_name = "ipu_c1",
 	},
 };
 
-struct omap_rproc_platform_data *remoteproc_get_plat_data(void)
+static struct omap_device_pm_latency omap_rproc_latency[] = {
+	{
+		.deactivate_func = omap_device_idle_hwmods,
+		.activate_func	 = omap_device_enable_hwmods,
+		.deactivate_lat = 1,
+		.activate_lat = 1,
+	},
+};
+
+struct omap_rproc_platform_data *omap4_get_rproc_data(void)
 {
 	return omap4_rproc_data;
 }
 
-int remoteproc_get_plat_data_size(void)
-{
-	return ARRAY_SIZE(omap4_rproc_data);
-}
-EXPORT_SYMBOL(remoteproc_get_plat_data_size);
-
 
 #define NR_RPROC_DEVICES ARRAY_SIZE(omap4_rproc_data)
 
-static struct platform_device *omap4_rproc_pdev[NR_RPROC_DEVICES];
+struct omap_device *omap4_rproc_pdev[NR_RPROC_DEVICES];
+
+int omap_get_num_of_remoteproc(void)
+{
+	return NR_RPROC_DEVICES;
+}
+EXPORT_SYMBOL(omap_get_num_of_remoteproc);
+
 
 static int __init omap4_rproc_init(void)
 {
-	int i, err;
+	struct omap_hwmod *oh;
+	struct omap_device_pm_latency *ohl;
+	char *oh_name, *pdev_name;
+	int ohl_cnt = 0, i;
+	int rproc_data_size;
+	struct omap_rproc_platform_data *rproc_data;
 
-	for (i = 0; i < NR_RPROC_DEVICES; i++) {
-		struct platform_device *pdev;
+	pdev_name = "omap-remoteproc";
+	ohl = omap_rproc_latency;
+	ohl_cnt = ARRAY_SIZE(omap_rproc_latency);
 
-		pdev = platform_device_alloc("omap-remoteproc", i);
-		if (!pdev) {
-			err = -ENOMEM;
-			goto err_out;
+
+	rproc_data = omap4_get_rproc_data();
+	rproc_data_size = omap_get_num_of_remoteproc();
+
+	for (i = 0; i < rproc_data_size; i++) {
+		oh_name = rproc_data[i].oh_name;
+		oh = omap_hwmod_lookup(oh_name);
+		if (!oh) {
+			pr_err("%s: could not look up %s\n", __func__, oh_name);
+			continue;
 		}
-
-		err = platform_device_add_data(pdev, &omap4_rproc_data[i],
-					       sizeof(omap4_rproc_data[0]));
-		err = platform_device_add(pdev);
-		if (err)
-			goto err_out;
-		omap4_rproc_pdev[i] = pdev;
+		omap4_rproc_pdev[i] = omap_device_build(pdev_name, i, oh,
+					&rproc_data[i],
+					sizeof(struct omap_rproc_platform_data),
+					ohl, ohl_cnt, false);
+		WARN(IS_ERR(omap4_rproc_pdev[i]), "Could not build omap_device"
+				"for %s %s\n", pdev_name, oh_name);
 	}
 	return 0;
-
-err_out:
-	while (i--)
-		platform_device_put(omap4_rproc_pdev[i]);
-	return err;
 }
 module_init(omap4_rproc_init);
 
 static void __exit omap4_rproc_exit(void)
 {
-	int i;
 
-	for (i = 0; i < NR_RPROC_DEVICES; i++)
-		platform_device_unregister(omap4_rproc_pdev[i]);
 }
 module_exit(omap4_rproc_exit);
 

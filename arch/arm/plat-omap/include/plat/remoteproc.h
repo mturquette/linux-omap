@@ -39,10 +39,8 @@
 struct omap_rproc;
 
 struct omap_rproc_ops {
-	int (*startup)(struct omap_rproc *rproc);
-	int (*shutdown)(struct omap_rproc *rproc);
-	int (*start)(struct omap_rproc *rproc);
-	int (*stop)(struct omap_rproc *rproc);
+	int (*start)(struct device *dev, u32 start_addr);
+	int (*stop)(struct device *dev);
 	int (*get_state)(struct omap_rproc *rproc);
 };
 
@@ -66,10 +64,14 @@ struct omap_rproc {
 	int minor;
 };
 
-extern struct omap_rproc_platform_data *remoteproc_get_plat_data(void);
-extern int remoteproc_get_plat_data_size(void);
+struct omap_rproc_start_args {
+	u32 start_addr;
+};
 
-struct omap_rproc *rproc_get(const char *name);
-void rproc_put(struct omap_rproc *obj);
+struct omap_rproc_platform_data *omap3_get_rproc_data(void);
+int omap3_get_rproc_data_size(void);
+struct omap_rproc_platform_data *omap4_get_rproc_data(void);
+int omap4_get_rproc_data_size(void);
+int omap_get_num_of_remoteproc(void);
 
 #endif /* REMOTEPROC_H */

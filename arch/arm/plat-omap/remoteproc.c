@@ -35,16 +35,18 @@
 #include <plat/remoteproc.h>
 
 #define OMAP_RPROC_NAME "omap-rproc"
-#define DRV_NAME "omap-remoteproc"
+
 
 static struct class *omap_rproc_class;
 static dev_t omap_rproc_dev;
 static atomic_t num_of_rprocs;
-static struct platform_driver omap_rproc_driver;
 
-static inline int rproc_start(struct omap_rproc *rproc)
+
+static inline int rproc_start(struct omap_rproc *rproc, const void __user *arg)
 {
 	struct omap_rproc_platform_data *pdata;
+	struct omap_rproc_start_args start_args;
+
 	if (!rproc->dev)
 		return -EINVAL;
 
@@ -52,8 +54,12 @@ static inline int rproc_start(struct omap_rproc *rproc)
 	if (!pdata->ops)
 		return -EINVAL;
 
-	return pdata->ops->start(rproc);
-}
+#if 0
+	if (copy_from_user(&start_args, arg, sizeof(start_args)))
+		return -EFAULT;
+#endif
+	return pdata->ops->start(rproc->dev, start_args.start_addr); }
+
 
 static inline int rproc_stop(struct omap_rproc *rproc)
 {
@@ -65,8 +71,9 @@ static inline int rproc_stop(struct omap_rproc *rproc)
 	if (!pdata->ops)
 		return -EINVAL;
 
-	return pdata->ops->stop(rproc);
+	return pdata->ops->stop(rproc->dev);
 }
+
 
 static inline int rproc_get_state(struct omap_rproc *rproc)
 {
@@ -80,9 +87,10 @@ static inline int rproc_get_state(struct omap_rproc *rproc)
 
 	return pdata->ops->get_state(rproc);
 }
+
 static int omap_rproc_open(struct inode *inode, struct file *filp)
 {
-	int ret = 0;
+	unsigned int count, dev_num = iminor(inode);
 	struct omap_rproc *rproc;
 	struct omap_rproc_platform_data *pdata;
 
@@ -92,15 +100,14 @@ static int omap_rproc_open(struct inode *inode, struct file *filp)
 
 	pdata = rproc->dev->platform_data;
 
-	if (pdata->ops->startup) {
-		ret = pdata->ops->startup(rproc);
-		if (ret)
-			goto out;
-	}
+	count = atomic_inc_return(&rproc->count);
+	dev_info(rproc->dev, "%s: dev num %d, name %s, count %d\n", __func__,
+							dev_num,
+							pdata->name,
+							count);
 	filp->private_data = rproc;
 
-out:
-	return ret;
+	return 0;
 }
 
 static int omap_rproc_release(struct inode *inode, struct file *filp)
@@ -112,8 +119,7 @@ static int omap_rproc_release(struct inode *inode, struct file *filp)
 
 	pdata = rproc->dev->platform_data;
 
-	if (pdata->ops->shutdown)
-		pdata->ops->shutdown(rproc);
+	atomic_dec(&rproc->count);
 
 	return 0;
 }
@@ -124,6 +130,8 @@ static int omap_rproc_ioctl(struct inode *inode, struct file *filp,
 	int rc = 0;
 	struct omap_rproc *rproc = filp->private_data;
 
+	dev_info(rproc->dev, "%s\n", __func__);
+
 	if (!rproc)
 		return -EINVAL;
 
@@ -131,29 +139,16 @@ static int omap_rproc_ioctl(struct inode *inode, struct file *filp,
 		return -ENOTTY;
 	if (_IOC_NR(cmd) > RPROC_IOC_MAXNR)
 		return -ENOTTY;
-	if (_IOC_DIR(cmd) & _IOC_READ) {
-		if (!access_ok(VERIFY_WRITE, (void __user *)arg,
-				       _IOC_SIZE(cmd)))
-			return -EFAULT;
-	} else if (_IOC_DIR(cmd) & _IOC_WRITE) {
-		if (!access_ok(VERIFY_READ, (void __user *)arg,
-				       _IOC_SIZE(cmd)))
-			return -EFAULT;
-	}
 
 	switch (cmd) {
 	case RPROC_IOCSTART:
-		/*FIXME: re-visit this check to perform
-			proper permission checks */
-		/*if (!capable(CAP_SYS_ADMIN))
-			return -EPERM;*/
-		rc = rproc_start(rproc);
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		rc = rproc_start(rproc, (const void __user *) arg);
 		break;
 	case RPROC_IOCSTOP:
-		/*FIXME: re-visit this check to perform
-			proper permission checks */
-		/*if (!capable(CAP_SYS_ADMIN))
-			return -EPERM;*/
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
 		rc = rproc_stop(rproc);
 		break;
 	case RPROC_IOCGETSTATE:
@@ -218,7 +213,7 @@ static int omap_rproc_probe(struct platform_device *pdev)
 
 	rproc->dev = dev;
 	rproc->minor = minor;
-
+	atomic_set(&rproc->count, 0);
 	cdev_init(&rproc->cdev, &omap_rproc_fops);
 	rproc->cdev.owner = THIS_MODULE;
 	ret = cdev_add(&rproc->cdev, MKDEV(major, minor), 1);
@@ -233,11 +228,11 @@ static int omap_rproc_probe(struct platform_device *pdev)
 				OMAP_RPROC_NAME "%d", minor);
 	if (IS_ERR(tmpdev)) {
 		ret = PTR_ERR(tmpdev);
-		pr_err("%s: device_create failed: %d\n", __func__, ret);
+		dev_err(dev, "%s: device_create failed: %d\n", __func__, ret);
 		goto clean_cdev;
 	}
-
-	pr_info("%s initialized %s, major: %d, base-minor: %d\n",
++
+	dev_info(dev, "%s initialized %s, major: %d, base-minor: %d\n",
 			OMAP_RPROC_NAME,
 			pdata->name,
 			MAJOR(omap_rproc_dev),
@@ -252,7 +247,7 @@ out:
 	return ret;
 }
 
-static int omap_rproc_remove(struct platform_device *pdev)
+static int __devexit omap_rproc_remove(struct platform_device *pdev)
 {
 	int major = MAJOR(omap_rproc_dev);
 	struct device *dev = &pdev->dev;
@@ -274,35 +269,18 @@ static int omap_rproc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifndef CONFIG_PM
-#define omap_rproc_suspend		NULL
-#define omap_rproc_resume		NULL
-#define omap_rproc_runtime_suspend	NULL
-#define omap_rproc_runtime_resume	NULL
-#endif
-
-
-const static struct dev_pm_ops omap_rproc_dev_pm_ops = {
-	.suspend = omap_rproc_suspend,
-	.resume = omap_rproc_resume,
-	.runtime_suspend = omap_rproc_runtime_suspend,
-	.runtime_resume = omap_rproc_runtime_resume,
-};
-
 static struct platform_driver omap_rproc_driver = {
 	.probe = omap_rproc_probe,
-	.remove = omap_rproc_remove,
+	.remove = __devexit_p(omap_rproc_remove),
 	.driver = {
-		.name = DRV_NAME,
+		.name = "omap-remoteproc",
 		.owner = THIS_MODULE,
-		.pm = &omap_rproc_dev_pm_ops,
 	},
 };
 
-
 static int __init omap_rproc_init(void)
 {
-	int num = remoteproc_get_plat_data_size();
+	int num = omap_get_num_of_remoteproc();
 	int ret;
 
 	ret = alloc_chrdev_region(&omap_rproc_dev, 0, num, OMAP_RPROC_NAME);
@@ -322,11 +300,12 @@ static int __init omap_rproc_init(void)
 
 	ret = platform_driver_register(&omap_rproc_driver);
 	if (ret) {
-		pr_err("%s: platform_driver_register failed: %d\n",
-							__func__, ret);
+		pr_err("%s: platform_driver_register failed: %d\n", __func__,
+									ret);
 		goto out;
 	}
 	return 0;
+
 unreg_region:
 	unregister_chrdev_region(omap_rproc_dev, num);
 out:
@@ -336,8 +315,8 @@ module_init(omap_rproc_init);
 
 static void __exit omap_rproc_exit(void)
 {
-	int num = remoteproc_get_plat_data_size();
-	pr_info("%s\n", __func__);
+	int num = omap_get_num_of_remoteproc();
+
 	class_destroy(omap_rproc_class);
 	unregister_chrdev_region(omap_rproc_dev, num);
 }
