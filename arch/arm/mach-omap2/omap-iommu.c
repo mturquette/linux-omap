@@ -79,6 +79,7 @@ int iommu_get_plat_data_size()
 {
 	return num_iommu_devices;
 }
+EXPORT_SYMBOL(iommu_get_plat_data_size);
 
 struct iommu_platform_data *iommu_get_device_data(void)
 {
@@ -121,6 +122,11 @@ static int __init omap_iommu_init(void)
 					ohl, ohl_cnt, false);
 		WARN(IS_ERR(od), "Could not build omap_device"
 				"for %s %s\n", "omap-iommu", data->oh_name);
+		od = omap_device_build("omap-iovmm", i, oh,
+					data, sizeof(*data),
+					ohl, ohl_cnt, false);
+		WARN(IS_ERR(od), "Could not build omap_device"
+				"for %s %s\n", "omap-iovmm", data->oh_name);
 	}
 	return 0;
 }
