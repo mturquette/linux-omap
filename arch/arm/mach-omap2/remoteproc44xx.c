@@ -76,15 +76,16 @@ static struct omap_rproc_ops omap4_ducati1_ops = {
 };
 
 static struct omap_rproc_ops omap4_tesla_ops = {
-	.start = NULL,
-	.stop = NULL,
+	.start = proc44x_start,
+	.stop = proc44x_stop,
+	.get_state = omap4_rproc_get_state,
 };
 
 static struct omap_rproc_platform_data omap4_rproc_data[] = {
 	{
 		.name = "tesla",
 		.ops = &omap4_tesla_ops,
-		.oh_name = "dsp",
+		.oh_name = "dsp_c0",
 	},
 	{
 		.name = "ducati-proc0",
