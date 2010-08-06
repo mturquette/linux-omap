@@ -25,14 +25,30 @@
 #include <linux/io.h>
 #include <plat/remoteproc.h>
 
-
 #include <plat/omap_device.h>
 #include <plat/omap_hwmod.h>
+
+#include "cm.h"
+#include "prm.h"
+
+#define ABE_GPTIMER_MODULE_ENABLE		0x2
+#define ABE_GPTIMER_MODULE_DISABLE		0x0
+#define ABE_GPTIMER_IDLEST_MASK			0x30000
 
 static inline int proc44x_start(struct device *dev, u32 start_addr)
 {
 	struct platform_device *pdev = to_platform_device(dev);
+	struct omap_rproc *obj = (struct omap_rproc *)platform_get_drvdata(
+						to_platform_device(dev));
 	int ret = 0;
+
+	if (!strcmp(obj->name, "tesla")) {
+		dev_info(dev, "Enable GPTIMER5 for Tesla BIOS Clock\n");
+		/* Enable the GPTIMER5 clock */
+		cm_write_mod_reg(ABE_GPTIMER_MODULE_ENABLE,
+				OMAP4430_CM1_ABE_MOD,
+				OMAP4_CM1_ABE_TIMER5_CLKCTRL_OFFSET);
+	}
 
 	ret = omap_device_enable(pdev);
 	if (ret)
@@ -48,11 +64,20 @@ err_start:
 static inline int proc44x_stop(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
+	struct omap_rproc *obj = (struct omap_rproc *)platform_get_drvdata(
+						to_platform_device(dev));
 	int ret = 0;
 
 	ret = omap_device_shutdown(pdev);
 	if (ret)
 		dev_err(dev, "%s err 0x%x\n", __func__, ret);
+
+	if (!strcmp(obj->name, "tesla")) {
+		dev_info(dev, "disable GPTIMER5\n");
+		cm_write_mod_reg(ABE_GPTIMER_MODULE_DISABLE,
+				OMAP4430_CM1_ABE_MOD,
+				OMAP4_CM1_ABE_TIMER5_CLKCTRL_OFFSET);
+	}
 
 	return ret;
 }
