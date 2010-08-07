@@ -1,8 +1,8 @@
 menuconfig OMAP2_DSS
-        tristate "OMAP2/3 Display Subsystem support (EXPERIMENTAL)"
-        depends on ARCH_OMAP2 || ARCH_OMAP3
+        tristate "OMAP2/3/4 Display Subsystem support (EXPERIMENTAL)"
+        depends on ARCH_OMAP2 || ARCH_OMAP3 || ARCH_OMAP4
         help
-          OMAP2/3 Display Subsystem support.
+          OMAP2/3/4 Display Subsystem support.
 
 if OMAP2_DSS
 
@@ -60,6 +60,12 @@ config OMAP2_DSS_VENC
 	help
 	  OMAP Video Encoder support for S-Video and composite TV-out.
 
+config OMAP2_DSS_HDMI
+	bool "HDMI support"
+        default n
+	help
+	  OMAP HDMI panel support.
+
 config OMAP2_DSS_SDI
 	bool "SDI support"
 	depends on ARCH_OMAP3
@@ -72,7 +78,7 @@ config OMAP2_DSS_SDI
 
 config OMAP2_DSS_DSI
 	bool "DSI support"
-	depends on ARCH_OMAP3
+	depends on ARCH_OMAP3 || ARCH_OMAP4
         default n
 	help
 	  MIPI DSI (Display Serial Interface) support.

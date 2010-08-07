@@ -224,16 +224,19 @@ err:
 
 static void dss_put_clocks(void)
 {
+#if 0
 	if (core.dss_96m_fck)
 		clk_put(core.dss_96m_fck);
 	clk_put(core.dss_54m_fck);
 	clk_put(core.dss1_fck);
 	clk_put(core.dss2_fck);
 	clk_put(core.dss_ick);
+#endif
 }
 
 unsigned long dss_clk_get_rate(enum dss_clock clk)
 {
+#if 0
 	switch (clk) {
 	case DSS_CLK_ICK:
 		return clk_get_rate(core.dss_ick);
@@ -248,7 +251,8 @@ unsigned long dss_clk_get_rate(enum dss_clock clk)
 	}
 
 	BUG();
-	return 0;
+#endif
+	return 153600000;
 }
 
 static unsigned count_clk_bits(enum dss_clock clks)
@@ -272,7 +276,7 @@ static unsigned count_clk_bits(enum dss_clock clks)
 static void dss_clk_enable_no_ctx(enum dss_clock clks)
 {
 	unsigned num_clks = count_clk_bits(clks);
-
+#if 0
 	if (clks & DSS_CLK_ICK)
 		clk_enable(core.dss_ick);
 	if (clks & DSS_CLK_FCK1)
@@ -283,7 +287,7 @@ static void dss_clk_enable_no_ctx(enum dss_clock clks)
 		clk_enable(core.dss_54m_fck);
 	if (clks & DSS_CLK_96M)
 		clk_enable(core.dss_96m_fck);
-
+#endif
 	core.num_clks_enabled += num_clks;
 }
 
@@ -300,7 +304,7 @@ void dss_clk_enable(enum dss_clock clks)
 static void dss_clk_disable_no_ctx(enum dss_clock clks)
 {
 	unsigned num_clks = count_clk_bits(clks);
-
+#if 0
 	if (clks & DSS_CLK_ICK)
 		clk_disable(core.dss_ick);
 	if (clks & DSS_CLK_FCK1)
@@ -311,7 +315,7 @@ static void dss_clk_disable_no_ctx(enum dss_clock clks)
 		clk_disable(core.dss_54m_fck);
 	if (clks & DSS_CLK_96M)
 		clk_disable(core.dss_96m_fck);
-
+#endif
 	core.num_clks_enabled -= num_clks;
 }
 
@@ -411,7 +415,8 @@ static void dss_debug_dump_clocks(struct seq_file *s)
 	dss_dump_clocks(s);
 	dispc_dump_clocks(s);
 #ifdef CONFIG_OMAP2_DSS_DSI
-	dsi_dump_clocks(s);
+	dsi_dump_clocks(DSI1, OMAP_DSS_CHANNEL_LCD, s);
+	dsi_dump_clocks(DSI2, OMAP_DSS_CHANNEL_LCD2, s);
 #endif
 }
 
@@ -497,7 +502,7 @@ static int omap_dss_probe(struct platform_device *pdev)
 {
 	struct omap_dss_board_info *pdata = pdev->dev.platform_data;
 	int skip_init = 0;
-	int r;
+	int r = 0;
 	int i;
 
 	core.pdev = pdev;
@@ -505,6 +510,10 @@ static int omap_dss_probe(struct platform_device *pdev)
 	dss_init_overlay_managers(pdev);
 	dss_init_overlays(pdev);
 
+	if (cpu_is_omap44xx())
+		dss_init_writeback(pdev); /*Write back init*/
+
+	if (!cpu_is_omap44xx())
 	r = dss_get_clocks();
 	if (r)
 		goto err_clocks;
@@ -556,12 +565,28 @@ static int omap_dss_probe(struct platform_device *pdev)
 			DSSERR("Failed to initialize SDI\n");
 			goto err_sdi;
 		}
+	}
 
+	if (!cpu_is_omap24xx()) {
 		r = dsi_init(pdev);
 		if (r) {
 			DSSERR("Failed to initialize DSI\n");
-			goto err_dsi;
+			goto err_dsi1;
 		}
+
+		if (cpu_is_omap44xx()) {
+			r = dsi2_init(pdev);
+			if (r) {
+				DSSERR("Failed to initialize DSI2\n");
+				goto err_dsi2;
+			}
+		}
+	}
+
+	r = hdmi_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize hdmi\n");
+		goto err_hdmi;
 	}
 
 	r = dss_initialize_debugfs();
@@ -593,9 +618,14 @@ static int omap_dss_probe(struct platform_device *pdev)
 err_register:
 	dss_uninitialize_debugfs();
 err_debugfs:
-	if (cpu_is_omap34xx())
+	hdmi_exit();
+err_hdmi:
+	if (cpu_is_omap44xx())
+		dsi2_exit();
+err_dsi2:
+	if (!cpu_is_omap24xx())
 		dsi_exit();
-err_dsi:
+err_dsi1:
 	if (cpu_is_omap34xx())
 		sdi_exit();
 err_sdi:
@@ -625,12 +655,16 @@ static int omap_dss_remove(struct platform_device *pdev)
 	dss_uninitialize_debugfs();
 
 	venc_exit();
+	hdmi_exit();
 	dispc_exit();
 	dpi_exit();
 	rfbi_exit();
-	if (cpu_is_omap34xx()) {
+	if (!cpu_is_omap24xx()) {
 		dsi_exit();
-		sdi_exit();
+		if (cpu_is_omap44xx())
+			dsi2_exit();
+		if (cpu_is_omap34xx())
+			sdi_exit();
 	}
 
 	dss_exit();

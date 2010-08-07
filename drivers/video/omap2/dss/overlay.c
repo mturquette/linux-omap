@@ -36,8 +36,11 @@
 
 #include "dss.h"
 
+#define MAX_DSS_OVERLAYS (cpu_is_omap44xx() ? 4 : 3)
+
 static int num_overlays;
 static struct list_head overlay_list;
+static struct omap_overlay *dispc_overlays[4];
 
 static ssize_t overlay_name_show(struct omap_overlay *ovl, char *buf)
 {
@@ -56,6 +59,7 @@ static ssize_t overlay_manager_store(struct omap_overlay *ovl, const char *buf,
 	int i, r;
 	struct omap_overlay_manager *mgr = NULL;
 	struct omap_overlay_manager *old_mgr;
+	struct omap_overlay_info info;
 	int len = size;
 
 	if (buf[size-1] == '\n')
@@ -80,6 +84,16 @@ static ssize_t overlay_manager_store(struct omap_overlay *ovl, const char *buf,
 
 	if (mgr == ovl->manager)
 		return size;
+
+	if (sysfs_streq(mgr->name, "tv")) {
+		ovl->get_overlay_info(ovl, &info);
+		if (mgr->device->panel.timings.x_res < info.width ||
+			mgr->device->panel.timings.y_res < info.height) {
+			printk(KERN_ERR"TV does not support downscaling"
+			"Please configure overlay to supported format");
+			return -EINVAL;
+		}
+	}
 
 	old_mgr = ovl->manager;
 
@@ -166,18 +180,28 @@ static ssize_t overlay_output_size_show(struct omap_overlay *ovl, char *buf)
 static ssize_t overlay_output_size_store(struct omap_overlay *ovl,
 		const char *buf, size_t size)
 {
-	int r;
+	int r, out_width, out_height;
 	char *last;
 	struct omap_overlay_info info;
 
 	ovl->get_overlay_info(ovl, &info);
 
-	info.out_width = simple_strtoul(buf, &last, 10);
+	out_width = simple_strtoul(buf, &last, 10);
 	++last;
 	if (last - buf >= size)
 		return -EINVAL;
 
-	info.out_height = simple_strtoul(last, &last, 10);
+	out_height = simple_strtoul(last, &last, 10);
+
+	if (sysfs_streq(ovl->manager->name, "tv")) {
+		if (ovl->manager->device->panel.timings.x_res < out_width ||
+		ovl->manager->device->panel.timings.y_res < out_height)
+		printk(KERN_ERR"TV does not support downscaling , Wrong output size");
+		return -EINVAL;
+	}
+
+	info.out_width = out_width;
+	info.out_height = out_height;
 
 	r = ovl->set_overlay_info(ovl, &info);
 	if (r)
@@ -234,13 +258,42 @@ static ssize_t overlay_global_alpha_store(struct omap_overlay *ovl,
 
 	ovl->get_overlay_info(ovl, &info);
 
-	/* Video1 plane does not support global alpha
+	/* In OMAP2/3 Video1 plane does not support global alpha
 	 * to always make it 255 completely opaque
 	 */
-	if (ovl->id == OMAP_DSS_VIDEO1)
+	if ((!cpu_is_omap44xx()) && (ovl->id == OMAP_DSS_VIDEO1))
 		info.global_alpha = 255;
 	else
 		info.global_alpha = simple_strtoul(buf, NULL, 10);
+
+	r = ovl->set_overlay_info(ovl, &info);
+	if (r)
+		return r;
+
+	if (ovl->manager) {
+		r = ovl->manager->apply(ovl->manager);
+		if (r)
+			return r;
+	}
+
+	return size;
+}
+
+static ssize_t overlay_zorder_show(struct omap_overlay *ovl, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n",
+			ovl->info.zorder);
+}
+
+static ssize_t overlay_zorder_store(struct omap_overlay *ovl,
+		const char *buf, size_t size)
+{
+	int r;
+	struct omap_overlay_info info;
+
+	ovl->get_overlay_info(ovl, &info);
+
+	info.zorder = simple_strtoul(buf, NULL, 10);
 
 	r = ovl->set_overlay_info(ovl, &info);
 	if (r)
@@ -278,6 +331,9 @@ static OVERLAY_ATTR(enabled, S_IRUGO|S_IWUSR,
 		overlay_enabled_show, overlay_enabled_store);
 static OVERLAY_ATTR(global_alpha, S_IRUGO|S_IWUSR,
 		overlay_global_alpha_show, overlay_global_alpha_store);
+static OVERLAY_ATTR(zorder, S_IRUGO|S_IWUSR,
+		overlay_zorder_show, overlay_zorder_store);
+
 
 static struct attribute *overlay_sysfs_attrs[] = {
 	&overlay_attr_name.attr,
@@ -288,6 +344,7 @@ static struct attribute *overlay_sysfs_attrs[] = {
 	&overlay_attr_output_size.attr,
 	&overlay_attr_enabled.attr,
 	&overlay_attr_global_alpha.attr,
+	&overlay_attr_zorder.attr,
 	NULL
 };
 
@@ -392,6 +449,12 @@ int dss_check_overlay(struct omap_overlay *ovl, struct omap_dss_device *dssdev)
 		return -EINVAL;
 	}
 
+	if ((info->zorder < OMAP_DSS_OVL_ZORDER_0) ||
+			(info->zorder > OMAP_DSS_OVL_ZORDER_3)) {
+		DSSERR("overlay doesn't support zorder %d\n", info->zorder);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -492,12 +555,8 @@ EXPORT_SYMBOL(omap_dss_get_num_overlays);
 
 struct omap_overlay *omap_dss_get_overlay(int num)
 {
-	int i = 0;
-	struct omap_overlay *ovl;
-
-	list_for_each_entry(ovl, &overlay_list, list) {
-		if (i++ == num)
-			return ovl;
+	if (num < num_overlays) {
+		return dispc_overlays[num];
 	}
 
 	return NULL;
@@ -510,11 +569,9 @@ static void omap_dss_add_overlay(struct omap_overlay *overlay)
 	list_add_tail(&overlay->list, &overlay_list);
 }
 
-static struct omap_overlay *dispc_overlays[3];
-
 void dss_overlay_setup_dispc_manager(struct omap_overlay_manager *mgr)
 {
-	mgr->num_overlays = 3;
+	mgr->num_overlays = MAX_DSS_OVERLAYS;
 	mgr->overlays = dispc_overlays;
 }
 
@@ -535,7 +592,7 @@ void dss_init_overlays(struct platform_device *pdev)
 
 	num_overlays = 0;
 
-	for (i = 0; i < 3; ++i) {
+	for (i = 0; i < MAX_DSS_OVERLAYS; ++i) {
 		struct omap_overlay *ovl;
 		ovl = kzalloc(sizeof(*ovl), GFP_KERNEL);
 
@@ -545,32 +602,48 @@ void dss_init_overlays(struct platform_device *pdev)
 		case 0:
 			ovl->name = "gfx";
 			ovl->id = OMAP_DSS_GFX;
-			ovl->supported_modes = cpu_is_omap34xx() ?
+			ovl->supported_modes = (cpu_is_omap44xx() |
+				cpu_is_omap34xx()) ?
 				OMAP_DSS_COLOR_GFX_OMAP3 :
 				OMAP_DSS_COLOR_GFX_OMAP2;
 			ovl->caps = OMAP_DSS_OVL_CAP_DISPC;
 			ovl->info.global_alpha = 255;
+			ovl->info.zorder = OMAP_DSS_OVL_ZORDER_0;
 			break;
 		case 1:
 			ovl->name = "vid1";
 			ovl->id = OMAP_DSS_VIDEO1;
-			ovl->supported_modes = cpu_is_omap34xx() ?
+			ovl->supported_modes = (cpu_is_omap44xx() |
+				cpu_is_omap34xx()) ?
 				OMAP_DSS_COLOR_VID1_OMAP3 :
 				OMAP_DSS_COLOR_VID_OMAP2;
 			ovl->caps = OMAP_DSS_OVL_CAP_SCALE |
 				OMAP_DSS_OVL_CAP_DISPC;
 			ovl->info.global_alpha = 255;
+			ovl->info.zorder = OMAP_DSS_OVL_ZORDER_3;
 			break;
 		case 2:
 			ovl->name = "vid2";
 			ovl->id = OMAP_DSS_VIDEO2;
-			ovl->supported_modes = cpu_is_omap34xx() ?
+			ovl->supported_modes = (cpu_is_omap44xx() |
+				cpu_is_omap34xx()) ?
 				OMAP_DSS_COLOR_VID2_OMAP3 :
 				OMAP_DSS_COLOR_VID_OMAP2;
 			ovl->caps = OMAP_DSS_OVL_CAP_SCALE |
 				OMAP_DSS_OVL_CAP_DISPC;
 			ovl->info.global_alpha = 255;
+			ovl->info.zorder = OMAP_DSS_OVL_ZORDER_2;
 			break;
+		case 3:
+			ovl->name = "vid3";
+			ovl->id = OMAP_DSS_VIDEO3;
+			ovl->supported_modes = OMAP_DSS_COLOR_VID3_OMAP3;
+			ovl->caps = OMAP_DSS_OVL_CAP_SCALE |
+				OMAP_DSS_OVL_CAP_DISPC;
+			ovl->info.global_alpha = 255;
+			ovl->info.zorder = OMAP_DSS_OVL_ZORDER_1;
+			break;
+
 		}
 
 		ovl->set_manager = &omap_dss_set_manager;
@@ -627,12 +700,23 @@ void dss_recheck_connections(struct omap_dss_device *dssdev, bool force)
 	int i;
 	struct omap_overlay_manager *lcd_mgr;
 	struct omap_overlay_manager *tv_mgr;
+	struct omap_overlay_manager *lcd2_mgr = NULL;
 	struct omap_overlay_manager *mgr = NULL;
 
 	lcd_mgr = omap_dss_get_overlay_manager(OMAP_DSS_OVL_MGR_LCD);
 	tv_mgr = omap_dss_get_overlay_manager(OMAP_DSS_OVL_MGR_TV);
+	if (cpu_is_omap44xx())
+		lcd2_mgr = omap_dss_get_overlay_manager(OMAP_DSS_OVL_MGR_LCD2);
 
-	if (dssdev->type != OMAP_DISPLAY_TYPE_VENC) {
+	if (dssdev->channel == OMAP_DSS_CHANNEL_LCD2) {
+		if (!lcd2_mgr->device || force) {
+			if (lcd2_mgr->device)
+				lcd2_mgr->unset_device(lcd2_mgr);
+			lcd2_mgr->set_device(lcd2_mgr, dssdev);
+			mgr = lcd2_mgr;
+		}
+	} else if (dssdev->type != OMAP_DISPLAY_TYPE_VENC
+		&& dssdev->type != OMAP_DISPLAY_TYPE_HDMI) {		
 		if (!lcd_mgr->device || force) {
 			if (lcd_mgr->device)
 				lcd_mgr->unset_device(lcd_mgr);
@@ -641,7 +725,8 @@ void dss_recheck_connections(struct omap_dss_device *dssdev, bool force)
 		}
 	}
 
-	if (dssdev->type == OMAP_DISPLAY_TYPE_VENC) {
+	if (dssdev->type == OMAP_DISPLAY_TYPE_VENC
+		|| dssdev->type == OMAP_DISPLAY_TYPE_HDMI) {
 		if (!tv_mgr->device || force) {
 			if (tv_mgr->device)
 				tv_mgr->unset_device(tv_mgr);
@@ -651,7 +736,7 @@ void dss_recheck_connections(struct omap_dss_device *dssdev, bool force)
 	}
 
 	if (mgr) {
-		for (i = 0; i < 3; i++) {
+		for (i = 0; i < MAX_DSS_OVERLAYS; i++) {
 			struct omap_overlay *ovl;
 			ovl = omap_dss_get_overlay(i);
 			if (!ovl->manager || force) {

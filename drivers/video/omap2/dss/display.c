@@ -27,8 +27,10 @@
 #include <linux/jiffies.h>
 #include <linux/list.h>
 #include <linux/platform_device.h>
+#include <linux/slab.h>
 
 #include <plat/display.h>
+#include <plat/cpu.h>
 #include "dss.h"
 
 static LIST_HEAD(display_list);
@@ -81,6 +83,9 @@ static ssize_t display_upd_mode_store(struct device *dev,
 	struct omap_dss_device *dssdev = to_dss_device(dev);
 	int val, r;
 	enum omap_dss_update_mode mode;
+
+	if (!dssdev->driver->set_update_mode)
+		return -EINVAL;
 
 	val = simple_strtoul(buf, NULL, 10);
 
@@ -278,6 +283,55 @@ static ssize_t display_wss_store(struct device *dev,
 	return size;
 }
 
+static ssize_t display_edid_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+
+
+		if (!dssdev->driver->get_edid)
+		return -ENOENT;
+	dssdev->driver->get_edid(dssdev);
+	return snprintf(buf, PAGE_SIZE, "EDID-Information");
+
+}
+static ssize_t display_custom_edid_timing_store(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	int val, code, mode;
+	val = simple_strtoul(buf, NULL, 0);
+	code = val / 10;
+	mode = val % 10;
+		if (!dssdev->driver->set_custom_edid_timing_code)
+			return -ENOENT;
+	dssdev->driver->set_custom_edid_timing_code(dssdev, code, mode);
+	return snprintf(buf, PAGE_SIZE, "EDID-Information %d mode % d code", mode, code);
+
+}
+
+static ssize_t display_hpd_enabled_store(struct device *dev,
+		struct device_attribute *attr,
+		const char *buf, size_t size)
+{
+	struct omap_dss_device *dssdev = to_dss_device(dev);
+	bool enabled, r;
+
+	enabled = simple_strtoul(buf, NULL, 10);
+
+	if (enabled != (dssdev->state != OMAP_DSS_DISPLAY_DISABLED)) {
+		if (enabled) {
+			r = dssdev->driver->hpd_enable(dssdev);
+			if (r)
+				return r;
+		} else {
+			dssdev->driver->disable(dssdev);
+		}
+	}
+
+	return size;
+}
+
 static DEVICE_ATTR(enabled, S_IRUGO|S_IWUSR,
 		display_enabled_show, display_enabled_store);
 static DEVICE_ATTR(update_mode, S_IRUGO|S_IWUSR,
@@ -292,6 +346,10 @@ static DEVICE_ATTR(mirror, S_IRUGO|S_IWUSR,
 		display_mirror_show, display_mirror_store);
 static DEVICE_ATTR(wss, S_IRUGO|S_IWUSR,
 		display_wss_show, display_wss_store);
+static DEVICE_ATTR(custom_edid_timing, S_IRUGO|S_IWUSR,
+		display_edid_show, display_custom_edid_timing_store);
+static DEVICE_ATTR(hpd_enabled, S_IRUGO|S_IWUSR,
+		NULL, display_hpd_enabled_store);
 
 static struct device_attribute *display_sysfs_attrs[] = {
 	&dev_attr_enabled,
@@ -301,6 +359,8 @@ static struct device_attribute *display_sysfs_attrs[] = {
 	&dev_attr_rotate,
 	&dev_attr_mirror,
 	&dev_attr_wss,
+	&dev_attr_custom_edid_timing,
+	&dev_attr_hpd_enabled,
 	NULL
 };
 
@@ -319,7 +379,11 @@ void default_get_overlay_fifo_thresholds(enum omap_plane plane,
 	unsigned burst_size_bytes;
 
 	*burst_size = OMAP_DSS_BURST_16x32;
-	burst_size_bytes = 16 * 32 / 8;
+	if (cpu_is_omap44xx())
+		burst_size_bytes = 8 * 128 / 8; /* OMAP4: highest
+							burst size is 8x128*/
+	else
+		burst_size_bytes = 16 * 32 / 8;
 
 	*fifo_high = fifo_size - 1;
 	*fifo_low = fifo_size - burst_size_bytes;
@@ -342,7 +406,7 @@ int omapdss_default_get_recommended_bpp(struct omap_dss_device *dssdev)
 			return 16;
 	case OMAP_DISPLAY_TYPE_VENC:
 	case OMAP_DISPLAY_TYPE_SDI:
-		return 24;
+	case OMAP_DISPLAY_TYPE_HDMI:
 		return 24;
 	default:
 		BUG();
@@ -363,6 +427,9 @@ bool dss_use_replication(struct omap_dss_device *dssdev,
 
 	if (dssdev->type == OMAP_DISPLAY_TYPE_DPI &&
 			(dssdev->panel.config & OMAP_DSS_LCD_TFT) == 0)
+		return false;
+
+	if (dssdev->type == OMAP_DISPLAY_TYPE_HDMI)
 		return false;
 
 	switch (dssdev->type) {
@@ -407,6 +474,9 @@ void dss_init_device(struct platform_device *pdev,
 #ifdef CONFIG_OMAP2_DSS_VENC
 	case OMAP_DISPLAY_TYPE_VENC:
 #endif
+#ifdef CONFIG_OMAP2_DSS_HDMI
+	case OMAP_DISPLAY_TYPE_HDMI:
+#endif
 		break;
 	default:
 		DSSERR("Support for display '%s' not compiled in.\n",
@@ -438,6 +508,11 @@ void dss_init_device(struct platform_device *pdev,
 #ifdef CONFIG_OMAP2_DSS_DSI
 	case OMAP_DISPLAY_TYPE_DSI:
 		r = dsi_init_display(dssdev);
+		break;
+#endif
+#ifdef CONFIG_OMAP2_DSS_HDMI
+	case OMAP_DISPLAY_TYPE_HDMI:
+		r = hdmi_init_display(dssdev);
 		break;
 #endif
 	default:
@@ -631,3 +706,47 @@ void omap_dss_stop_device(struct omap_dss_device *dssdev)
 }
 EXPORT_SYMBOL(omap_dss_stop_device);
 
+/* since omap_dss_update_size can be called in irq context, schedule work from
+ * work-queue to deliver notification to client..
+ */
+struct update_size_work {
+	struct work_struct work;
+	struct omap_dss_device *dssdev;
+	int w, h;
+};
+
+static void update_size_worker(struct work_struct *work)
+{
+	struct update_size_work *usw =
+		container_of(work, struct update_size_work, work);
+	if (usw->dssdev->size_notify) {
+		usw->dssdev->size_notify(usw->dssdev->size_notify_arg, usw->w, usw->h);
+	}
+	kfree(work);
+}
+
+/**
+ * Called by lower level driver to notify about a change in resolution, for
+ * example in response to a hot-plug event..
+ */
+void omap_dss_update_size(struct omap_dss_device *dssdev, int w, int h)
+{
+	struct update_size_work *usw =
+			kmalloc(sizeof(struct update_size_work), GFP_KERNEL);
+	if (usw) {
+		INIT_WORK(&usw->work, update_size_worker);
+		usw->dssdev = dssdev;
+		usw->w = w;
+		usw->h = h;
+		schedule_work(&usw->work);
+	}
+}
+EXPORT_SYMBOL(omap_dss_update_size);
+
+void omap_dss_set_size_notify(struct omap_dss_device *dssdev,
+		void (*notify)(void *arg, int w, int h), void *arg)
+{
+	dssdev->size_notify_arg = arg;
+	dssdev->size_notify = notify;
+}
+EXPORT_SYMBOL(omap_dss_set_size_notify);
