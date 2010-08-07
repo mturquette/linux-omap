@@ -19,6 +19,7 @@
 #include <linux/stringify.h>
 
 #include <plat/iommu.h>
+#include <plat/omap_device.h>
 
 /*
  * omap2 architecture specific register bit definitions
@@ -44,9 +45,13 @@
 #define MMU_IRQ_EMUMISS		(1 << 2)
 #define MMU_IRQ_TRANSLATIONFAULT	(1 << 1)
 #define MMU_IRQ_TLBMISS		(1 << 0)
-#define MMU_IRQ_MASK	\
-	(MMU_IRQ_MULTIHITFAULT | MMU_IRQ_TABLEWALKFAULT | MMU_IRQ_EMUMISS | \
-	 MMU_IRQ_TRANSLATIONFAULT)
+
+#define __MMU_IRQ_FAULT		\
+	(MMU_IRQ_MULTIHITFAULT | MMU_IRQ_EMUMISS | MMU_IRQ_TRANSLATIONFAULT)
+#define MMU_IRQ_MASK		\
+	(__MMU_IRQ_FAULT | MMU_IRQ_TABLEWALKFAULT | MMU_IRQ_TLBMISS)
+#define MMU_IRQ_TWL_MASK	(__MMU_IRQ_FAULT | MMU_IRQ_TABLEWALKFAULT)
+#define MMU_IRQ_TLB_MISS_MASK	(__MMU_IRQ_FAULT | MMU_IRQ_TLBMISS)
 
 /* MMU_CNTL */
 #define MMU_CNTL_SHIFT		1
@@ -61,10 +66,30 @@
 	 ((pgsz) == MMU_CAM_PGSZ_64K) ? 0xffff0000 :	\
 	 ((pgsz) == MMU_CAM_PGSZ_4K)  ? 0xfffff000 : 0)
 
+
+static void omap2_iommu_set_twl(struct iommu *obj, bool on)
+{
+	u32 l = iommu_read_reg(obj, MMU_CNTL);
+
+	if (on)
+		iommu_write_reg(obj, MMU_IRQ_TWL_MASK, MMU_IRQENABLE);
+	else
+		iommu_write_reg(obj, MMU_IRQ_TLB_MISS_MASK, MMU_IRQENABLE);
+
+	l &= ~MMU_CNTL_MASK;
+	if (on)
+		l |= (MMU_CNTL_MMU_EN | MMU_CNTL_TWL_EN);
+	else
+		l |= (MMU_CNTL_MMU_EN);
+
+	iommu_write_reg(obj, l, MMU_CNTL);
+}
+
 static int omap2_iommu_enable(struct iommu *obj)
 {
 	u32 l, pa;
 	unsigned long timeout;
+	int ret = 0;
 
 	if (!obj->iopgd || !IS_ALIGNED((u32)obj->iopgd,  SZ_16K))
 		return -EINVAL;
@@ -72,6 +97,10 @@ static int omap2_iommu_enable(struct iommu *obj)
 	pa = virt_to_phys(obj->iopgd);
 	if (!IS_ALIGNED(pa, SZ_16K))
 		return -EINVAL;
+
+	ret = omap_device_enable(obj->pdev);
+	if (ret)
+		return ret;
 
 	iommu_write_reg(obj, MMU_SYS_SOFTRESET, MMU_SYSCONFIG);
 
@@ -96,19 +125,17 @@ static int omap2_iommu_enable(struct iommu *obj)
 	l |= (MMU_SYS_IDLE_SMART | MMU_SYS_AUTOIDLE);
 	iommu_write_reg(obj, l, MMU_SYSCONFIG);
 
-	iommu_write_reg(obj, MMU_IRQ_MASK, MMU_IRQENABLE);
 	iommu_write_reg(obj, pa, MMU_TTB);
 
-	l = iommu_read_reg(obj, MMU_CNTL);
-	l &= ~MMU_CNTL_MASK;
-	l |= (MMU_CNTL_MMU_EN | MMU_CNTL_TWL_EN);
-	iommu_write_reg(obj, l, MMU_CNTL);
+	omap2_iommu_set_twl(obj, true);
 
 	return 0;
 }
 
 static void omap2_iommu_disable(struct iommu *obj)
 {
+	int ret = 0;
+
 	u32 l = iommu_read_reg(obj, MMU_CNTL);
 
 	l &= ~MMU_CNTL_MASK;
@@ -116,6 +143,8 @@ static void omap2_iommu_disable(struct iommu *obj)
 	iommu_write_reg(obj, MMU_SYS_IDLE_FORCE, MMU_SYSCONFIG);
 
 	dev_dbg(obj->dev, "%s is shutting down\n", obj->name);
+	if (omap_device_shutdown(obj->pdev))
+		dev_err(obj->dev, "%s err 0x%x\n", __func__, ret);
 }
 
 static u32 omap2_iommu_fault_isr(struct iommu *obj, u32 *ra)
@@ -146,8 +175,8 @@ static u32 omap2_iommu_fault_isr(struct iommu *obj, u32 *ra)
 	}
 	printk("\n");
 
-	iommu_write_reg(obj, stat, MMU_IRQSTATUS);
-	omap2_iommu_disable(obj);
+	/* Disable further interrupts */
+	iommu_write_reg(obj, 0, MMU_IRQENABLE);
 	return stat;
 }
 
@@ -300,6 +329,7 @@ static const struct iommu_functions omap2_iommu_ops = {
 
 	.enable		= omap2_iommu_enable,
 	.disable	= omap2_iommu_disable,
+	.set_twl	= omap2_iommu_set_twl,
 	.fault_isr	= omap2_iommu_fault_isr,
 
 	.tlb_read_cr	= omap2_tlb_read_cr,

@@ -13,6 +13,8 @@
 #ifndef __MACH_IOMMU_H
 #define __MACH_IOMMU_H
 
+#include <linux/list.h>
+
 struct iotlb_entry {
 	u32 da;
 	u32 pa;
@@ -28,10 +30,8 @@ struct iotlb_entry {
 struct iommu {
 	const char	*name;
 	struct module	*owner;
-	struct clk	*clk;
 	void __iomem	*regbase;
 	struct device	*dev;
-
 	unsigned int	refcount;
 	struct mutex	iommu_lock;	/* global for this whole object */
 
@@ -41,15 +41,17 @@ struct iommu {
 	 */
 	u32		*iopgd;
 	spinlock_t	page_table_lock; /* protect iopgd */
-
 	int		nr_tlb_entries;
 
 	struct list_head	mmap;
 	struct mutex		mmap_lock; /* protect mmap */
 
-	int (*isr)(struct iommu *obj);
+	struct blocking_notifier_head	notifier;
 
 	void *ctx; /* iommu context: registres saved area */
+
+	struct platform_device *pdev;
+	struct list_head event_list;
 };
 
 struct cr_regs {
@@ -69,6 +71,12 @@ struct cr_regs {
 	};
 };
 
+struct iommu_event_ntfy {
+	u32     fd;
+	struct eventfd_ctx *evt_ctx;
+	struct list_head list;
+};
+
 struct iotlb_lock {
 	short base;
 	short vict;
@@ -80,6 +88,7 @@ struct iommu_functions {
 
 	int (*enable)(struct iommu *obj);
 	void (*disable)(struct iommu *obj);
+	void (*set_twl)(struct iommu *obj, bool on);
 	u32 (*fault_isr)(struct iommu *obj, u32 *ra);
 
 	void (*tlb_read_cr)(struct iommu *obj, struct cr_regs *cr);
@@ -98,10 +107,17 @@ struct iommu_functions {
 	ssize_t (*dump_ctx)(struct iommu *obj, char *buf, ssize_t len);
 };
 
+enum {
+	IOMMU_FAULT,
+	IOMMU_CLOSE,
+};
+
 struct iommu_platform_data {
 	const char *name;
-	const char *clk_name;
+	const char *oh_name;
 	const int nr_tlb_entries;
+	int irq;
+	void __iomem *io_base;
 };
 
 #if defined(CONFIG_ARCH_OMAP1)
@@ -142,13 +158,21 @@ extern u32 iommu_arch_version(void);
 extern void iotlb_cr_to_e(struct cr_regs *cr, struct iotlb_entry *e);
 extern u32 iotlb_cr_to_virt(struct cr_regs *cr);
 
+extern int iommu_register_notifier(struct iommu *obj,
+						struct notifier_block *nb);
+extern int iommu_unregister_notifier(struct iommu *obj,
+						struct notifier_block *nb);
+extern int iommu_notify_event(struct iommu *obj, int event, void *data);
+
 extern int load_iotlb_entry(struct iommu *obj, struct iotlb_entry *e);
+extern void iommu_set_twl(struct iommu *obj, bool on);
 extern void flush_iotlb_page(struct iommu *obj, u32 da);
 extern void flush_iotlb_range(struct iommu *obj, u32 start, u32 end);
 extern void flush_iotlb_all(struct iommu *obj);
 
 extern int iopgtable_store_entry(struct iommu *obj, struct iotlb_entry *e);
 extern size_t iopgtable_clear_entry(struct iommu *obj, u32 iova);
+extern void iopgtable_clear_entry_all(struct iommu *obj);
 
 extern struct iommu *iommu_get(const char *name);
 extern void iommu_put(struct iommu *obj);
@@ -164,5 +188,5 @@ extern int foreach_iommu_device(void *data,
 
 extern ssize_t iommu_dump_ctx(struct iommu *obj, char *buf, ssize_t len);
 extern size_t dump_tlb_entries(struct iommu *obj, char *buf, ssize_t len);
-
+extern int iommu_get_plat_data_size(void);
 #endif /* __MACH_IOMMU_H */
