@@ -1,14 +1,20 @@
 /*
- * sound/soc/blackfin/bf5xx-i2s.h
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
 
-#ifndef _BF5XX_I2S_H
-#define _BF5XX_I2S_H
+#ifndef _JZ4740_PCM_H
+#define _JZ4740_PCM_H
 
-extern struct snd_soc_dai bf5xx_i2s_dai;
+#include <linux/dma-mapping.h>
+#include <asm/mach-jz4740/dma.h>
+
+
+struct jz4740_pcm_config {
+	struct jz4740_dma_config dma_config;
+	phys_addr_t fifo_addr;
+};
 
 #endif
