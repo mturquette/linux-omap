@@ -783,7 +783,20 @@ void __init omap_display_init(struct omap_dss_board_info *board_data)
 	char oh_name[7][MAX_OMAP_DSS_HWMOD_NAME_LEN] = {"dss", "dss_dispc", "dss_dsi1", "dss_dsi2", "dss_hdmi", "dss_rfbi", "dss_venc"};
 	int l, idx, i;
 	struct omap_display_platform_data pdata;
+	void __iomem    *base_cm;
 	idx = 1;
+
+	/* This is a temporary fix
+	 * In CM_DSS_CLKSTCTRL register bits [1:0] are CLKTRCTRL
+	 * The default value is 0x3 (HW_AUTO)  but desired value is 0x2 (SW_WKUP)
+	 * 0x2: SW_WKUP: Start a software forced wake-up
+	 *	transition on the domain.
+	 * 0x3: HW_AUTO: Automatic transition is enabled. Sleep
+	 *	and wakeup transition are based upon hardware
+	 *	conditions.
+	 */
+	base_cm = ioremap(0x4A009100, 0x64);
+	__raw_writel(0x2, base_cm);
 
 	for (i = 0; i < 7; i++)	{
 		l = snprintf(oh_name[i], MAX_OMAP_DSS_HWMOD_NAME_LEN, oh_name[i]);
