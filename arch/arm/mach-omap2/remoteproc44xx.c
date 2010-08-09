@@ -83,9 +83,12 @@ static inline int proc44x_stop(struct device *dev)
 }
 
 
-static inline int omap4_rproc_get_state(struct omap_rproc *rproc)
+static inline int omap4_rproc_get_state(struct device *dev)
 {
-	return rproc->state;
+	struct platform_device *pdev = to_platform_device(dev);
+	struct omap_device *odev = to_omap_device(pdev);
+
+	return odev->_state;
 }
 
 static struct omap_rproc_ops omap4_ducati0_ops = {

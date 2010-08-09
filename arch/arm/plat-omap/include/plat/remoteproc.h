@@ -41,7 +41,7 @@ struct omap_rproc;
 struct omap_rproc_ops {
 	int (*start)(struct device *dev, u32 start_addr);
 	int (*stop)(struct device *dev);
-	int (*get_state)(struct omap_rproc *rproc);
+	int (*get_state)(struct device *dev);
 };
 
 struct omap_rproc_clk_t {
