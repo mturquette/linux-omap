@@ -324,6 +324,11 @@ static int omap_hsmmc_23_set_power(struct device *dev, int slot, int power_on,
 
 	return ret;
 }
+static int omap_hsmmc_45_set_power(struct device *dev, int slot, int power_on,
+				   int vdd)
+{
+	return 0;
+}
 
 static int omap_hsmmc_1_set_sleep(struct device *dev, int slot, int sleep,
 				  int vdd, int cardsleep)
@@ -374,6 +379,12 @@ static int omap_hsmmc_23_set_sleep(struct device *dev, int slot, int sleep,
 		return regulator_enable(host->vcc_aux);
 }
 
+static int omap_hsmmc_45_set_sleep(struct device *dev, int slot, int sleep,
+				   int vdd, int cardsleep)
+{
+	return 0;
+}
+
 static int omap_hsmmc_reg_get(struct omap_hsmmc_host *host)
 {
 	struct regulator *reg;
@@ -390,6 +401,12 @@ static int omap_hsmmc_reg_get(struct omap_hsmmc_host *host)
 		/* Off-chip level shifting, or none */
 		mmc_slot(host).set_power = omap_hsmmc_23_set_power;
 		mmc_slot(host).set_sleep = omap_hsmmc_23_set_sleep;
+		break;
+	case OMAP_MMC4_DEVID:
+	case OMAP_MMC5_DEVID:
+		/* TODO Update required */
+		mmc_slot(host).set_power = omap_hsmmc_45_set_power;
+		mmc_slot(host).set_sleep = omap_hsmmc_45_set_sleep;
 		break;
 	default:
 		pr_err("MMC%d configuration not supported!\n", host->id);
@@ -1580,7 +1597,6 @@ static void omap_hsmmc_request(struct mmc_host *mmc, struct mmc_request *req)
 static void omap_hsmmc_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 {
 	struct omap_hsmmc_host *host = mmc_priv(mmc);
-	struct omap_mmc_platform_data *pdata = host->pdata;
 	u16 dsor = 0;
 	unsigned long regval;
 	unsigned long timeout;
@@ -1627,7 +1643,6 @@ static void omap_hsmmc_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		break;
 	}
 
-	if (pdata->dev_attr->flags & MMC_SUPPORT_18V_3V) {
 		/* Only MMC1 can interface at 3V without some flavor
 		 * of external transceiver; but they all handle 1.8V.
 		 */
@@ -1643,7 +1658,6 @@ static void omap_hsmmc_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 				dev_dbg(mmc_dev(host->mmc),
 						"Switch operation failed\n");
 		}
-	}
 
 	if (ios->clock) {
 		dsor = OMAP_MMC_MASTER_CLOCK / ios->clock;
@@ -1711,12 +1725,12 @@ static void omap_hsmmc_conf_bus_power(struct omap_hsmmc_host *host)
 	u32 hctl, capa, value;
 
 	/* Only MMC1 supports 3.0V */
-	if (host->pdata->dev_attr->flags & MMC_SUPPORT_18V_3V) {
-		hctl = SDVS30;
-		capa = VS30 | VS18;
-	} else {
+	if (mmc_slot(host).ocr_mask == MMC_VDD_165_195) {
 		hctl = SDVS18;
 		capa = VS18;
+	} else {
+		hctl = SDVS30;
+		capa = VS30 | VS18;
 	}
 
 	if (host->dma_type == ADMA_XFER)
@@ -2071,7 +2085,9 @@ static int __init omap_hsmmc_probe(struct platform_device *pdev)
 	struct omap_hsmmc_host *host = NULL;
 	struct resource *res;
 	int ret, irq;
+#if 0
 	int ctrlr_caps;
+#endif
 
 	if (pdata == NULL) {
 		dev_err(&pdev->dev, "Platform Data is missing\n");

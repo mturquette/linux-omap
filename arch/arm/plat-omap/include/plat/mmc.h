@@ -45,10 +45,6 @@
 
 #define OMAP_MMC_MAX_SLOTS	2
 
-/* omap_hwmod integration data */
-#define MMC_SUPPORT_18V_3V		(1 << 0)
-#define MMC_SUPPORT_18V			(1 << 1)
-
 struct mmc_dev_attr {
 	u8 flags;
 };
@@ -240,8 +236,7 @@ extern void omap_mmc_notify_cover_event(struct device *dev, int slot,
 	defined(CONFIG_MMC_OMAP_HS) || defined(CONFIG_MMC_OMAP_HS_MODULE)
 void omap1_init_mmc(struct omap_mmc_platform_data **mmc_data,
 				int nr_controllers);
-void omap2_init_mmc(struct omap_mmc_platform_data **mmc_data,
-				int nr_controllers);
+void omap2_init_mmc(struct omap_mmc_platform_data *mmc_data, int ctrl_nr);
 int omap_mmc_add(const char *name, int id, unsigned long base,
 				unsigned long size, unsigned int irq,
 				struct omap_mmc_platform_data *data);

@@ -31,7 +31,7 @@ static u16 control_mmc1;
 
 static struct hsmmc_controller {
 	char				name[HSMMC_NAME_LEN + 1];
-} hsmmc[OMAP34XX_NR_MMC];
+} hsmmc[OMAP44XX_NR_MMC];
 
 #if defined(CONFIG_ARCH_OMAP3) && defined(CONFIG_PM)
 
@@ -201,7 +201,7 @@ static int nop_mmc_set_power(struct device *dev, int slot, int power_on,
 	return 0;
 }
 
-static struct omap_mmc_platform_data *hsmmc_data[OMAP34XX_NR_MMC] __initdata;
+static struct omap_mmc_platform_data *hsmmc_data[OMAP44XX_NR_MMC] __initdata;
 
 void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 {
@@ -234,9 +234,8 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 	}
 
 	for (c = controllers; c->mmc; c++) {
-		struct hsmmc_controller *hc = hsmmc + c->mmc - 1;
-		struct omap_mmc_platform_data *mmc = hsmmc_data[c->mmc - 1];
-
+		struct hsmmc_controller *hc = hsmmc + controller_cnt;
+		struct omap_mmc_platform_data *mmc = hsmmc_data[controller_cnt];
 		if (!c->mmc || c->mmc > nr_hsmmc) {
 			pr_debug("MMC%d: no such controller\n", c->mmc);
 			continue;
@@ -245,8 +244,6 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 			pr_debug("MMC%d: already configured\n", c->mmc);
 			continue;
 		}
-
-		controller_cnt++;
 
 		mmc = kzalloc(sizeof(struct omap_mmc_platform_data),
 			      GFP_KERNEL);
@@ -343,27 +340,36 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 				mmc->slots[0].after_set_reg = NULL;
 			}
 			break;
+		case 4:
+		case 5:
+			/* TODO Update required */
+			mmc->slots[0].before_set_reg = NULL;
+			mmc->slots[0].after_set_reg = NULL;
+			break;
 		default:
 			pr_err("MMC%d configuration not supported!\n", c->mmc);
 			kfree(mmc);
 			continue;
 		}
-		hsmmc_data[c->mmc - 1] = mmc;
+		hsmmc_data[controller_cnt] = mmc;
+		omap2_init_mmc(hsmmc_data[controller_cnt], c->mmc);
+		controller_cnt++;
 	}
 
-	omap2_init_mmc(hsmmc_data, controller_cnt);
 
 	/* pass the device nodes back to board setup code */
+	controller_cnt = 0;
 	for (c = controllers; c->mmc; c++) {
-		struct omap_mmc_platform_data *mmc = hsmmc_data[c->mmc - 1];
+		struct omap_mmc_platform_data *mmc = hsmmc_data[controller_cnt];
 
 		if (!c->mmc || c->mmc > nr_hsmmc)
 			continue;
 		c->dev = mmc->dev;
+		controller_cnt++;
 	}
 
 done:
-	for (i = 0; i < nr_hsmmc; i++)
+	for (i = 0; i < controller_cnt; i++)
 		kfree(hsmmc_data[i]);
 }
 
