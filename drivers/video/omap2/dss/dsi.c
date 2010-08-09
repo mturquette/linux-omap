@@ -234,6 +234,13 @@ struct dsi_irq_stats {
 	unsigned cio_irqs[32];
 };
 
+struct error_recovery {
+	struct work_struct recovery_work;
+	struct omap_dss_device *dssdev;
+	bool enabled;
+	bool recovering;
+};
+
 static struct dsi_struct
 {
 	void __iomem	*base;
@@ -286,10 +293,14 @@ static struct dsi_struct
 	int debug_read;
 	int debug_write;
 
+	struct error_recovery recover;
+
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
 	spinlock_t irq_stats_lock;
 	struct dsi_irq_stats irq_stats;
 #endif
+	struct omap_display_platform_data *pdata;
+	struct platform_device *pdev;
 } dsi1, dsi2;
 
 #ifdef DEBUG
@@ -520,6 +531,15 @@ static void print_irq_status_cio(u32 status)
 
 static int debug_irq;
 
+static void schedule_error_recovery(enum omap_dsi_index ix)
+{
+	struct dsi_struct *p_dsi;
+	p_dsi = (ix == DSI1) ? &dsi1 : &dsi2;
+
+	if (p_dsi->recover.enabled && !p_dsi->recover.recovering)
+		schedule_work(&p_dsi->recover.recovery_work);
+}
+
 /* called from dss in OMAP3, in OMAP4 there is a dedicated
 * interrupt line for DSI */
 irqreturn_t dsi_irq_handler(int irq, void *arg)
@@ -528,31 +548,29 @@ irqreturn_t dsi_irq_handler(int irq, void *arg)
 	u32 irqstatus, vcstatus, ciostatus;
 	int i;
 	enum omap_dsi_index ix = DSI1;
-	struct dsi_struct *p_dsi;
-
-	p_dsi = (ix == DSI1) ? &dsi1 : &dsi2;
 
 	irqstatus = dsi_read_reg(ix, DSI_IRQSTATUS);
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-	spin_lock(&p_dsi->irq_stats_lock);
-	p_dsi->irq_stats.irq_count++;
-	dss_collect_irq_stats(irqstatus, p_dsi->irq_stats.dsi_irqs);
+	spin_lock(&dsi1.irq_stats_lock);
+	dsi1.irq_stats.irq_count++;
+	dss_collect_irq_stats(irqstatus, dsi1.irq_stats.dsi_irqs);
 #endif
 
 	if (irqstatus & DSI_IRQ_ERROR_MASK) {
 		DSSERR("DSI error, irqstatus %x\n", irqstatus);
 		print_irq_status(irqstatus);
-		spin_lock(&p_dsi->errors_lock);
-		p_dsi->errors |= irqstatus & DSI_IRQ_ERROR_MASK;
-		spin_unlock(&p_dsi->errors_lock);
+		spin_lock(&dsi1.errors_lock);
+		dsi1.errors |= irqstatus & DSI_IRQ_ERROR_MASK;
+		spin_unlock(&dsi1.errors_lock);
+		schedule_error_recovery(ix);
 	} else if (debug_irq) {
 		print_irq_status(irqstatus);
 	}
 
 #ifdef DSI_CATCH_MISSING_TE
 	if (irqstatus & DSI_IRQ_TE_TRIGGER)
-		del_timer(&p_dsi->te_timer);
+		del_timer(&dsi1.te_timer);
 #endif
 
 	for (i = 0; i < 4; ++i) {
@@ -562,20 +580,21 @@ irqreturn_t dsi_irq_handler(int irq, void *arg)
 		vcstatus = dsi_read_reg(ix, DSI_VC_IRQSTATUS(i));
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-		dss_collect_irq_stats(vcstatus, p_dsi->irq_stats.vc_irqs[i]);
+		dss_collect_irq_stats(vcstatus, dsi1.irq_stats.vc_irqs[i]);
 #endif
 
 		if (vcstatus & DSI_VC_IRQ_BTA){
-			complete(&p_dsi->bta_completion);
+			complete(&dsi1.bta_completion);
 
-			if (p_dsi->bta_callback)
-				p_dsi->bta_callback(ix);
+			if (dsi1.bta_callback)
+				dsi1.bta_callback(ix);
 		}
 
 		if (vcstatus & DSI_VC_IRQ_ERROR_MASK) {
 			DSSERR("DSI VC(%d) error, vc irqstatus %x\n",
 				       i, vcstatus);
 			print_irq_status_vc(i, vcstatus);
+			schedule_error_recovery(ix);
 		} else if (debug_irq) {
 			print_irq_status_vc(i, vcstatus);
 		}
@@ -589,7 +608,7 @@ irqreturn_t dsi_irq_handler(int irq, void *arg)
 		ciostatus = dsi_read_reg(ix, DSI_COMPLEXIO_IRQ_STATUS);
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-		dss_collect_irq_stats(ciostatus, p_dsi->irq_stats.cio_irqs);
+		dss_collect_irq_stats(ciostatus, dsi1.irq_stats.cio_irqs);
 #endif
 
 		dsi_write_reg(ix, DSI_COMPLEXIO_IRQ_STATUS, ciostatus);
@@ -609,7 +628,7 @@ irqreturn_t dsi_irq_handler(int irq, void *arg)
 	dsi_read_reg(ix, DSI_IRQSTATUS);
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-	spin_unlock(&p_dsi->irq_stats_lock);
+	spin_unlock(&dsi1.irq_stats_lock);
 #endif
 	return IRQ_HANDLED;
 }
@@ -620,31 +639,29 @@ irqreturn_t dsi2_irq_handler(int irq, void *arg)
 	u32 irqstatus, vcstatus, ciostatus;
 	int i;
 	enum omap_dsi_index ix = DSI2;
-	struct dsi_struct *p_dsi;
-
-	p_dsi = (ix == DSI1) ? &dsi1 : &dsi2;
 
 	irqstatus = dsi_read_reg(ix, DSI_IRQSTATUS);
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-	spin_lock(&p_dsi->irq_stats_lock);
-	p_dsi->irq_stats.irq_count++;
-	dss_collect_irq_stats(irqstatus, p_dsi->irq_stats.dsi_irqs);
+	spin_lock(&dsi2.irq_stats_lock);
+	dsi2.irq_stats.irq_count++;
+	dss_collect_irq_stats(irqstatus, dsi2.irq_stats.dsi_irqs);
 #endif
 
 	if (irqstatus & DSI_IRQ_ERROR_MASK) {
 		DSSERR("DSI error, irqstatus %x\n", irqstatus);
 		print_irq_status(irqstatus);
-		spin_lock(&p_dsi->errors_lock);
-		p_dsi->errors |= irqstatus & DSI_IRQ_ERROR_MASK;
-		spin_unlock(&p_dsi->errors_lock);
+		spin_lock(&dsi2.errors_lock);
+		dsi2.errors |= irqstatus & DSI_IRQ_ERROR_MASK;
+		spin_unlock(&dsi2.errors_lock);
+		schedule_error_recovery(ix);
 	} else if (debug_irq) {
 		print_irq_status(irqstatus);
 	}
 
 #ifdef DSI_CATCH_MISSING_TE
 	if (irqstatus & DSI_IRQ_TE_TRIGGER)
-		del_timer(&p_dsi->te_timer);
+		del_timer(&dsi2.te_timer);
 #endif
 
 	for (i = 0; i < 4; ++i) {
@@ -654,20 +671,21 @@ irqreturn_t dsi2_irq_handler(int irq, void *arg)
 		vcstatus = dsi_read_reg(ix, DSI_VC_IRQSTATUS(i));
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-		dss_collect_irq_stats(vcstatus, p_dsi->irq_stats.vc_irqs[i]);
+		dss_collect_irq_stats(vcstatus, dsi2.irq_stats.vc_irqs[i]);
 #endif
 
 		if (vcstatus & DSI_VC_IRQ_BTA){
-			complete(&p_dsi->bta_completion);
+			complete(&dsi2.bta_completion);
 
-			if (p_dsi->bta_callback)
-				p_dsi->bta_callback(ix);
+			if (dsi2.bta_callback)
+				dsi2.bta_callback(ix);
 		}
 
 		if (vcstatus & DSI_VC_IRQ_ERROR_MASK) {
 			DSSERR("DSI VC(%d) error, vc irqstatus %x\n",
 				       i, vcstatus);
 			print_irq_status_vc(i, vcstatus);
+			schedule_error_recovery(ix);
 		} else if (debug_irq) {
 			print_irq_status_vc(i, vcstatus);
 		}
@@ -681,7 +699,7 @@ irqreturn_t dsi2_irq_handler(int irq, void *arg)
 		ciostatus = dsi_read_reg(ix, DSI_COMPLEXIO_IRQ_STATUS);
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-		dss_collect_irq_stats(ciostatus, p_dsi->irq_stats.cio_irqs);
+		dss_collect_irq_stats(ciostatus, dsi2.irq_stats.cio_irqs);
 #endif
 
 		dsi_write_reg(ix, DSI_COMPLEXIO_IRQ_STATUS, ciostatus);
@@ -701,7 +719,7 @@ irqreturn_t dsi2_irq_handler(int irq, void *arg)
 	dsi_read_reg(ix, DSI_IRQSTATUS);
 
 #ifdef CONFIG_OMAP2_DSS_COLLECT_IRQ_STATS
-	spin_unlock(&p_dsi->irq_stats_lock);
+	spin_unlock(&dsi2.irq_stats_lock);
 #endif
 	return IRQ_HANDLED;
 }
@@ -783,9 +801,9 @@ static void dsi_vc_disable_bta_irq(enum omap_dsi_index ix,
 static inline void enable_clocks(bool enable)
 {
 	if (enable)
-		dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+		dss_clk_enable();
 	else
-		dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+		dss_clk_disable();
 }
 
 /* source clock for DSI PLL. this could also be PCLKFREE */
@@ -795,9 +813,9 @@ static inline void dsi_enable_pll_clock(enum omap_dsi_index ix,
 	struct dsi_struct *p_dsi = (ix == DSI1) ? &dsi1 : &dsi2;
 
 	if (enable)
-		dss_clk_enable(DSS_CLK_FCK2);
+		dss_clk_enable();
 	else
-		dss_clk_disable(DSS_CLK_FCK2);
+		dss_clk_disable();
 
 	if (enable && p_dsi->pll_locked) {
 		if (wait_for_bit_change(ix, DSI_PLL_STATUS, 1, 1) != 1)
@@ -1497,7 +1515,7 @@ void dsi_dump_regs(enum omap_dsi_index ix, struct seq_file *s)
 {
 #define DUMPREG(ix, r) seq_printf(s, "%-35s %08x\n", #r, dsi_read_reg(ix, r))
 
-	dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_enable();
 
 	DUMPREG(ix, DSI_REVISION);
 	DUMPREG(ix, DSI_SYSCONFIG);
@@ -1569,7 +1587,7 @@ void dsi_dump_regs(enum omap_dsi_index ix, struct seq_file *s)
 	DUMPREG(ix, DSI_PLL_CONFIGURATION1);
 	DUMPREG(ix, DSI_PLL_CONFIGURATION2);
 
-	dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_disable();
 #undef DUMPREG
 }
 
@@ -1607,8 +1625,8 @@ static int dsi_complexio_power(enum omap_dsi_index ix,
 static void dsi_complexio_config(struct omap_dss_device *dssdev)
 {
 	u32 r;
-	enum omap_dsi_index ix;
-	ix = (dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
+	enum omap_dsi_index ix =
+		dssdev->channel == OMAP_DSS_CHANNEL_LCD ? DSI1 : DSI2;
 
 	int clk_lane   = dssdev->phy.dsi.clk_lane;
 	int data1_lane = dssdev->phy.dsi.data1_lane;
@@ -3043,9 +3061,9 @@ static void dsi_update_screen_dispc(struct omap_dss_device *dssdev,
 	dsi_vc_write_long_header(ix, channel, DSI_DT_DCS_LONG_WRITE,
 			 packet_len, 0);
 
-	dsi_write_reg(ix, DSI_TE_HSYNC_WIDTH(0), 0x00000100);
-	dsi_write_reg(ix, DSI_TE_VSYNC_WIDTH(0), 0x0000FF00);
-	dsi_write_reg(ix, DSI_TE_HSYNC_NUMBER(0), 0x0000006E);
+	dsi_write_reg(ix, DSI_TE_HSYNC_WIDTH(ix), 0x00000100);
+	dsi_write_reg(ix, DSI_TE_VSYNC_WIDTH(ix), 0x0000FF00);
+	dsi_write_reg(ix, DSI_TE_HSYNC_NUMBER(ix), 0x0000006E);
 
 	if (p_dsi->te_enabled)
 		l = FLD_MOD(l, 1, 30, 30); /* TE_EN */
@@ -3531,7 +3549,7 @@ static int dsi_display_init_dsi(struct omap_dss_device *dssdev)
 	dsi_if_enable(ix, 1);
 	dsi_force_tx_stop_mode_io(ix);
 
-#ifndef OMAP4430_REV_ES2_0
+#ifdef CONFIG_OMAP4_ES1
 	/* OMAP4 trim registers */
 	dsi_write_reg(ix, DSI_DSIPHY_CFG12, 0x58);
 	dsi_write_reg(ix, DSI_DSIPHY_CFG14, 0xAA05C800);
@@ -3622,6 +3640,8 @@ int omapdss_dsi_display_enable(struct omap_dss_device *dssdev)
 	if (r)
 		goto err2;
 
+	p_dsi->recover.enabled = true;
+
 	mutex_unlock(&p_dsi->lock);
 
 	return 0;
@@ -3662,6 +3682,8 @@ void omapdss_dsi_display_disable(struct omap_dss_device *dssdev)
 
 	omap_dss_stop_device(dssdev);
 
+	p_dsi->recover.enabled = false;
+
 	mutex_unlock(&p_dsi->lock);
 }
 EXPORT_SYMBOL(omapdss_dsi_display_disable);
@@ -3675,6 +3697,17 @@ int omapdss_dsi_enable_te(struct omap_dss_device *dssdev, bool enable)
 	return 0;
 }
 EXPORT_SYMBOL(omapdss_dsi_enable_te);
+
+bool omap_dsi_recovery_state(enum omap_dsi_index ix)
+{
+	struct dsi_struct *p_dsi;
+
+	p_dsi = (ix == DSI1) ? &dsi1 : &dsi2;
+
+	return p_dsi->recover.recovering;
+
+}
+EXPORT_SYMBOL(omap_dsi_recovery_state);
 
 void dsi_get_overlay_fifo_thresholds(enum omap_plane plane,
 		u32 fifo_size, enum omap_burst_size *burst_size,
@@ -3704,6 +3737,8 @@ int dsi_init_display(struct omap_dss_device *dssdev)
 	p_dsi->vc[0].dssdev = dssdev;
 	p_dsi->vc[1].dssdev = dssdev;
 
+	p_dsi->recover.dssdev = dssdev;
+
 	return 0;
 }
 
@@ -3719,11 +3754,85 @@ void dsi_wait_dsi2_pll_active(enum omap_dsi_index ix)
 		DSSERR("DSI2 PLL clock not active\n");
 }
 
+static void dsi_error_recovery_worker(struct work_struct *work)
+{
+	u32 r;
+	struct dsi_struct *p_dsi;
+	enum omap_dsi_index ix;
+	struct error_recovery *recover;
+
+	recover = container_of(work, struct error_recovery,
+					recovery_work);
+	recover->recovering = true;
+	ix = (recover->dssdev->channel == OMAP_DSS_CHANNEL_LCD) ? DSI1 : DSI2;
+	p_dsi = (ix == DSI1) ? &dsi1 : &dsi2;
+
+	mutex_lock(&p_dsi->lock);
+	dsi_bus_lock(ix);
+
+	DSSERR("DSI error, ESD detected DSI%d\n", ix + 1);
+
+	if (!recover->enabled) {
+		DSSERR("recovery not enabled\n");
+		goto err;
+	}
+
+	enable_clocks(1);
+	dsi_enable_pll_clock(ix, 1);
+
+	dsi_force_tx_stop_mode_io(ix);
+
+	r = dsi_read_reg(ix, DSI_TIMING1);
+	r = FLD_MOD(r, 0, 15, 15);	/* FORCE_TX_STOP_MODE_IO */
+	dsi_write_reg(ix, DSI_TIMING1, r);
+
+	dsi_vc_enable(ix, 0, 0);
+	dsi_vc_enable(ix, 1, 0);
+
+	dsi_if_enable(ix, 0);
+
+	dsi_vc_enable(ix, 0, 1);
+	dsi_vc_enable(ix, 1, 1);
+
+	dsi_if_enable(ix, 1);
+
+	dsi_force_tx_stop_mode_io(ix);
+
+	enable_clocks(0);
+	dsi_enable_pll_clock(ix, 0);
+
+
+	/* Now check to ensure there is communication. */
+	/* If not, we need to hard reset */
+	if (recover->dssdev->driver->run_test) {
+		dsi_bus_unlock(ix);
+		mutex_unlock(&p_dsi->lock);
+
+		if (recover->dssdev->driver->run_test(recover->dssdev, 1) != 0) {
+			DSSERR("DSS IF reset failed, resetting panel taal%d\n", ix + 1);
+			recover->dssdev->driver->disable(recover->dssdev);
+			mdelay(10);
+			recover->dssdev->driver->enable(recover->dssdev);
+			recover->recovering = false;
+		}
+		return;
+	}
+
+	recover->recovering = false;
+
+	dsi_bus_unlock(ix);
+err:
+	mutex_unlock(&p_dsi->lock);
+}
+
 int dsi_init(struct platform_device *pdev)
 {
 	u32 rev;
 	int r;
+	struct resource *dsi1_mem;
 	enum omap_dsi_index ix = DSI1;
+	dsi1.pdata = pdev->dev.platform_data;
+	dsi1.pdev = pdev;
 
 	spin_lock_init(&dsi1.errors_lock);
 	dsi1.errors = 0;
@@ -3751,12 +3860,20 @@ int dsi_init(struct platform_device *pdev)
 		if (r)
 			goto err2;
 	}
+
+	dsi1.recover.dssdev = 0;
+	dsi1.recover.enabled = false;
+	dsi1.recover.recovering = false;
+	INIT_WORK(&dsi1.recover.recovery_work,
+		dsi_error_recovery_worker);
 #ifdef DSI_CATCH_MISSING_TE
 	init_timer(&dsi1.te_timer);
 	dsi1.te_timer.function = dsi_te_timeout;
 	dsi1.te_timer.data = 0;
 #endif
-	dsi1.base = ioremap(DSI_BASE, DSI_SZ_REGS);
+
+	dsi1_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	dsi1.base = ioremap(dsi1_mem->start, resource_size(dsi1_mem));
 	if (!dsi1.base) {
 		DSSERR("can't ioremap DSI\n");
 		r = -ENOMEM;
@@ -3795,7 +3912,10 @@ int dsi2_init(struct platform_device *pdev)
 {
 	u32 rev;
 	int r;
+	struct resource *dsi2_mem;
 	enum omap_dsi_index ix = DSI2;
+	dsi2.pdata = pdev->dev.platform_data;
+	dsi2.pdev = pdev;
 
 	spin_lock_init(&dsi2.errors_lock);
 	dsi2.errors = 0;
@@ -3822,6 +3942,12 @@ int dsi2_init(struct platform_device *pdev)
         if (r)
            goto err2;
 
+
+	dsi2.recover.dssdev = 0;
+	dsi2.recover.enabled = false;
+	dsi2.recover.recovering = false;
+	INIT_WORK(&dsi2.recover.recovery_work,
+		dsi_error_recovery_worker);
 #ifdef DSI_CATCH_MISSING_TE
 	init_timer(&dsi2.te_timer);
 	dsi2.te_timer.function = dsi2_te_timeout;
@@ -3829,7 +3955,8 @@ int dsi2_init(struct platform_device *pdev)
 #endif
 	dsi2.te_enabled = true;
 
-	dsi2.base = ioremap(DSI2_BASE, DSI_SZ_REGS);
+	dsi2_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	dsi2.base = ioremap(dsi2_mem->start, resource_size(dsi2_mem));
 	if (!dsi2.base) {
 		DSSERR("can't ioremap DSI2\n");
 		r = -ENOMEM;

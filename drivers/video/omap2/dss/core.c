@@ -32,6 +32,7 @@
 #include <linux/io.h>
 #include <linux/device.h>
 #include <linux/regulator/consumer.h>
+#include <linux/pm_runtime.h>
 
 #include <plat/display.h>
 #include <plat/clock.h>
@@ -52,6 +53,7 @@ static struct {
 	struct regulator *vdds_dsi_reg;
 	struct regulator *vdds_sdi_reg;
 	struct regulator *vdda_dac_reg;
+	struct omap_dss_board_info *pdata;
 } core;
 
 static void dss_clk_enable_all_no_ctx(void);
@@ -99,6 +101,7 @@ int dss_need_ctx_restore(void)
 	}
 }
 
+#ifdef HWMOD
 static void save_all_ctx(void)
 {
 	DSSDBG("save context\n");
@@ -128,6 +131,7 @@ static void restore_all_ctx(void)
 
 	dss_clk_disable_all_no_ctx();
 }
+#endif
 
 #if defined(CONFIG_DEBUG_FS) && defined(CONFIG_OMAP2_DSS_DEBUG_SUPPORT)
 /* CLOCKS */
@@ -157,6 +161,7 @@ static void core_dump_clocks(struct seq_file *s)
 }
 #endif /* defined(CONFIG_DEBUG_FS) && defined(CONFIG_OMAP2_DSS_DEBUG_SUPPORT) */
 
+#ifdef HWMOD
 static int dss_get_clock(struct clk **clock, const char *clk_name)
 {
 	struct clk *clk;
@@ -224,19 +229,16 @@ err:
 
 static void dss_put_clocks(void)
 {
-#if 0
 	if (core.dss_96m_fck)
 		clk_put(core.dss_96m_fck);
 	clk_put(core.dss_54m_fck);
 	clk_put(core.dss1_fck);
 	clk_put(core.dss2_fck);
 	clk_put(core.dss_ick);
-#endif
 }
 
 unsigned long dss_clk_get_rate(enum dss_clock clk)
 {
-#if 0
 	switch (clk) {
 	case DSS_CLK_ICK:
 		return clk_get_rate(core.dss_ick);
@@ -251,7 +253,6 @@ unsigned long dss_clk_get_rate(enum dss_clock clk)
 	}
 
 	BUG();
-#endif
 	return 153600000;
 }
 
@@ -276,7 +277,7 @@ static unsigned count_clk_bits(enum dss_clock clks)
 static void dss_clk_enable_no_ctx(enum dss_clock clks)
 {
 	unsigned num_clks = count_clk_bits(clks);
-#if 0
+
 	if (clks & DSS_CLK_ICK)
 		clk_enable(core.dss_ick);
 	if (clks & DSS_CLK_FCK1)
@@ -287,24 +288,14 @@ static void dss_clk_enable_no_ctx(enum dss_clock clks)
 		clk_enable(core.dss_54m_fck);
 	if (clks & DSS_CLK_96M)
 		clk_enable(core.dss_96m_fck);
-#endif
+
 	core.num_clks_enabled += num_clks;
-}
-
-void dss_clk_enable(enum dss_clock clks)
-{
-	bool check_ctx = core.num_clks_enabled == 0;
-
-	dss_clk_enable_no_ctx(clks);
-
-	if (check_ctx && cpu_is_omap34xx() && dss_need_ctx_restore())
-		restore_all_ctx();
 }
 
 static void dss_clk_disable_no_ctx(enum dss_clock clks)
 {
 	unsigned num_clks = count_clk_bits(clks);
-#if 0
+
 	if (clks & DSS_CLK_ICK)
 		clk_disable(core.dss_ick);
 	if (clks & DSS_CLK_FCK1)
@@ -315,22 +306,8 @@ static void dss_clk_disable_no_ctx(enum dss_clock clks)
 		clk_disable(core.dss_54m_fck);
 	if (clks & DSS_CLK_96M)
 		clk_disable(core.dss_96m_fck);
-#endif
+
 	core.num_clks_enabled -= num_clks;
-}
-
-void dss_clk_disable(enum dss_clock clks)
-{
-	if (cpu_is_omap34xx()) {
-		unsigned num_clks = count_clk_bits(clks);
-
-		BUG_ON(core.num_clks_enabled < num_clks);
-
-		if (core.num_clks_enabled == num_clks)
-			save_all_ctx();
-	}
-
-	dss_clk_disable_no_ctx(clks);
 }
 
 static void dss_clk_enable_all_no_ctx(void)
@@ -362,6 +339,38 @@ static void dss_clk_disable_all(void)
 		clks |= DSS_CLK_96M;
 	dss_clk_disable(clks);
 }
+#else
+
+unsigned long dss_clk_get_rate(enum dss_clock clk)
+{
+	return 153600000;
+}
+
+static void dss_put_clocks(void)
+{
+	return;
+}
+
+static void dss_clk_enable_no_ctx(enum dss_clock clks)
+{
+	return;
+}
+
+static void dss_clk_disable_no_ctx(enum dss_clock clks)
+{
+	return;
+}
+
+static void dss_clk_enable_all_no_ctx()
+{
+	return;
+}
+
+static void dss_clk_disable_all_no_ctx()
+{
+	return;
+}
+#endif
 
 /* REGULATORS */
 
@@ -501,18 +510,21 @@ static inline void dss_uninitialize_debugfs(void)
 static int omap_dss_probe(struct platform_device *pdev)
 {
 	struct omap_dss_board_info *pdata = pdev->dev.platform_data;
+#ifdef HWMOD
 	int skip_init = 0;
+#endif
 	int r = 0;
 	int i;
 
 	core.pdev = pdev;
+	core.pdata = pdev->dev.platform_data;
 
 	dss_init_overlay_managers(pdev);
 	dss_init_overlays(pdev);
 
 	if (cpu_is_omap44xx())
 		dss_init_writeback(pdev); /*Write back init*/
-
+#ifdef HWMOD
 	if (!cpu_is_omap44xx())
 	r = dss_get_clocks();
 	if (r)
@@ -534,7 +546,7 @@ static int omap_dss_probe(struct platform_device *pdev)
 		DSSERR("Failed to initialize DSS\n");
 		goto err_dss;
 	}
-
+	dss_clk_disable_all_no_ctx();
 	r = rfbi_init();
 	if (r) {
 		DSSERR("Failed to initialize rfbi\n");
@@ -547,7 +559,7 @@ static int omap_dss_probe(struct platform_device *pdev)
 		goto err_dpi;
 	}
 
-	r = dispc_init();
+	r = dispc_init(pdev);
 	if (r) {
 		DSSERR("Failed to initialize dispc\n");
 		goto err_dispc;
@@ -582,13 +594,14 @@ static int omap_dss_probe(struct platform_device *pdev)
 			}
 		}
 	}
-
+#ifdef CONFIG_OMAP2_DSS_HDMI
 	r = hdmi_init(pdev);
 	if (r) {
 		DSSERR("Failed to initialize hdmi\n");
 		goto err_hdmi;
 	}
-
+#endif
+#endif
 	r = dss_initialize_debugfs();
 	if (r)
 		goto err_debugfs;
@@ -610,16 +623,19 @@ static int omap_dss_probe(struct platform_device *pdev)
 		if (def_disp_name && strcmp(def_disp_name, dssdev->name) == 0)
 			pdata->default_device = dssdev;
 	}
-
+#ifdef HWMOD
 	dss_clk_disable_all();
-
+#endif 
 	return 0;
 
 err_register:
 	dss_uninitialize_debugfs();
 err_debugfs:
+#ifdef CONFIG_OMAP2_DSS_HDMI
 	hdmi_exit();
 err_hdmi:
+#endif
+#ifdef HWMOD
 	if (cpu_is_omap44xx())
 		dsi2_exit();
 err_dsi2:
@@ -642,7 +658,7 @@ err_dss:
 	dss_clk_disable_all_no_ctx();
 	dss_put_clocks();
 err_clocks:
-
+#endif
 	return r;
 }
 
@@ -655,7 +671,9 @@ static int omap_dss_remove(struct platform_device *pdev)
 	dss_uninitialize_debugfs();
 
 	venc_exit();
+#ifdef CONFIG_OMAP2_DSS_HDMI
 	hdmi_exit();
+#endif
 	dispc_exit();
 	dpi_exit();
 	rfbi_exit();
@@ -739,17 +757,202 @@ static int omap_dss_resume(struct platform_device *pdev)
 	return dss_resume_all_devices();
 }
 
+static int omap_dsshw_probe(struct platform_device *pdev)
+{
+	int skip_init = 0;
+	int r;
+
+	pm_runtime_enable(&pdev->dev);
+#ifdef CONFIG_FB_OMAP_BOOTLOADER_INIT
+	/* DISPC_CONTROL */
+	if (omap_readl(0x48050440) & 1)	/* LCD enabled? */
+		skip_init = 1;
+#endif
+
+	r = dss_init(skip_init, pdev);
+	if (r) {
+		DSSERR("Failed to initialize DSS\n");
+		goto err_dss;
+	}
+	return 0;
+
+err_dss:
+	dss_clk_disable();
+	return r;
+}
+static int omap_dsshw_remove(struct platform_device *pdev)
+{
+	dss_exit();
+	dss_clk_disable();
+
+	return 0;
+}
+static int omap_dispchw_probe(struct platform_device *pdev)
+{
+	int r;
+
+	r = dispc_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize dispc\n");
+		goto err_dispc;
+	}
+
+	return 0;
+err_dispc:
+	dss_clk_disable();
+	return r;
+}
+
+static int omap_dispchw_remove(struct platform_device *pdev)
+{
+	dispc_exit();
+	dpi_exit();
+	dss_clk_disable();
+
+	return 0;
+}
+
+static int omap_dsihw_probe(struct platform_device *pdev)
+{
+	int r;
+
+	r = dsi_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize dsi\n");
+		goto err_dsi;
+	}
+	return 0;
+
+err_dsi:
+	dss_clk_disable();
+	return r;
+}
+
+static int omap_dsihw_remove(struct platform_device *pdev)
+{
+	dsi_exit();
+	dss_clk_disable();
+	return 0;
+}
+
+static int omap_dsi2hw_probe(struct platform_device *pdev)
+{
+	int r;
+
+	r = dsi2_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize dsi2\n");
+		goto err_dsi2;
+	}
+	return 0;
+
+err_dsi2:
+	return r;
+}
+
+static int omap_dsi2hw_remove(struct platform_device *pdev)
+{
+	dsi2_exit();
+	dss_clk_disable();
+	return 0;
+}
+
+#ifdef CONFIG_OMAP2_DSS_HDMI
+static int omap_hdmihw_probe(struct platform_device *pdev)
+{
+	int r;
+
+	r = hdmi_init(pdev);
+	if (r) {
+		DSSERR("Failed to initialize hdmi\n");
+		goto err_hdmi;
+	}
+	return 0;
+err_hdmi:
+	return r;
+}
+
+static int omap_hdmihw_remove(struct platform_device *pdev)
+{
+	hdmi_exit();
+	dss_clk_disable();
+	return 0;
+}
+#endif
+
 static struct platform_driver omap_dss_driver = {
 	.probe          = omap_dss_probe,
 	.remove         = omap_dss_remove,
 	.shutdown	= omap_dss_shutdown,
-	.suspend	= omap_dss_suspend,
-	.resume		= omap_dss_resume,
+	.suspend	= NULL,
+	.resume		= NULL,
 	.driver         = {
 		.name   = "omapdss",
 		.owner  = THIS_MODULE,
 	},
 };
+
+static struct platform_driver omap_dsshw_driver = {
+	.probe          = omap_dsshw_probe,
+	.remove         = omap_dsshw_remove,
+	.shutdown	= NULL,
+	.suspend	= omap_dss_suspend,
+	.resume		= omap_dss_resume,
+	.driver         = {
+		.name   = "dss",
+		.owner  = THIS_MODULE,
+	},
+};
+
+static struct platform_driver omap_dispchw_driver = {
+	.probe          = omap_dispchw_probe,
+	.remove         = omap_dispchw_remove,
+	.shutdown	= NULL,
+	.suspend	= NULL,
+	.resume		= NULL,
+	.driver         = {
+		.name   = "dss_dispc",
+		.owner  = THIS_MODULE,
+	},
+};
+
+static struct platform_driver omap_dsihw_driver = {
+	.probe          = omap_dsihw_probe,
+	.remove         = omap_dsihw_remove,
+	.shutdown	= NULL,
+	.suspend	= NULL,
+	.resume		= NULL,
+	.driver         = {
+		.name   = "dss_dsi1",
+		.owner  = THIS_MODULE,
+	},
+};
+
+static struct platform_driver omap_dsi2hw_driver = {
+	.probe          = omap_dsi2hw_probe,
+	.remove         = omap_dsi2hw_remove,
+	.shutdown	= NULL,
+	.suspend	= NULL,
+	.resume		= NULL,
+	.driver         = {
+		.name   = "dss_dsi2",
+		.owner  = THIS_MODULE,
+	},
+};
+
+#ifdef CONFIG_OMAP2_DSS_HDMI
+static struct platform_driver omap_hdmihw_driver = {
+	.probe		= omap_hdmihw_probe,
+	.remove		= omap_hdmihw_remove,
+	.shutdown	= NULL,
+	.suspend	= NULL,
+	.resume		= NULL,
+	.driver		= {
+		.name	= "dss_hdmi",
+		.owner	= THIS_MODULE,
+	},
+};
+#endif
 
 /* BUS */
 static int dss_bus_match(struct device *dev, struct device_driver *driver)
@@ -1016,6 +1219,13 @@ static int __init omap_dss_init(void)
 
 static int __init omap_dss_init2(void)
 {
+	platform_driver_register(&omap_dsshw_driver);
+	platform_driver_register(&omap_dispchw_driver);
+	platform_driver_register(&omap_dsihw_driver);
+	platform_driver_register(&omap_dsi2hw_driver);
+#ifdef CONFIG_OMAP2_DSS_HDMI
+	platform_driver_register(&omap_hdmihw_driver);
+#endif
 	return platform_driver_register(&omap_dss_driver);
 }
 

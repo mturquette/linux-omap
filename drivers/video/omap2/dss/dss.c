@@ -29,6 +29,7 @@
 #include <linux/interrupt.h>
 #include <linux/seq_file.h>
 #include <linux/clk.h>
+#include <linux/pm_runtime.h>
 
 #include <plat/display.h>
 #include "dss.h"
@@ -76,6 +77,8 @@ static struct {
 	enum dss_clk_source dispc_clk_source;
 
 	u32		ctx[DSS_SZ_REGS / sizeof(u32)];
+	struct omap_display_platform_data *pdata;
+	struct platform_device *pdev;
 } dss;
 
 static int _omap_dss_wait_reset(void);
@@ -125,6 +128,30 @@ void dss_restore_context(void)
 
 #undef SR
 #undef RR
+
+void dss_clk_enable()
+{
+	use_count++;
+
+	if (use_count > 1)
+		return;
+	else if (use_count == 1)
+		pm_runtime_get_sync(&dss.pdev->dev);
+
+	return;
+}
+
+void dss_clk_disable()
+{
+	use_count--;
+
+	if (use_count < 0)
+		use_count = 0;
+	else if (use_count == 0)
+		pm_runtime_put_sync(&dss.pdev->dev);
+
+	return;
+}
 
 void dss_sdi_init(u8 datapairs)
 {
@@ -218,7 +245,7 @@ void dss_dump_clocks(struct seq_file *s)
 	unsigned long dpll4_ck_rate = 0;
 	unsigned long dpll4_m4_ck_rate = 0;
 
-	dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_enable();
 
 	if (cpu_is_omap34xx()) {
 		dpll4_ck_rate = clk_get_rate(clk_get_parent(dss.dpll4_m4_ck));
@@ -240,14 +267,14 @@ void dss_dump_clocks(struct seq_file *s)
 			dpll4_ck_rate / dpll4_m4_ck_rate,
 			dss_clk_get_rate(DSS_CLK_FCK1));
 
-	dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_disable();
 }
 
 void dss_dump_regs(struct seq_file *s)
 {
 #define DUMPREG(r) seq_printf(s, "%-35s %08x\n", #r, dss_read_reg(r))
 
-	dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_enable();
 
 	DUMPREG(DSS_REVISION);
 	DUMPREG(DSS_SYSCONFIG);
@@ -261,7 +288,7 @@ void dss_dump_regs(struct seq_file *s)
 #endif
 	DUMPREG(DSS_SDI_STATUS);
 
-	dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_disable();
 #undef DUMPREG
 }
 
@@ -581,17 +608,22 @@ void dss_switch_tv_hdmi(int hdmi)
 		REG_FLD_MOD(DSS_CONTROL, 0, 9, 8);
 }
 
-int dss_init(bool skip_init)
+int dss_init(bool skip_init, struct platform_device *pdev)
 {
-	int r;
+	int r = 0, dss_irq;
 	u32 rev;
+	struct resource *dss_mem;
 
-	dss.base = ioremap(DSS_BASE, DSS_SZ_REGS);
+	dss.pdata = pdev->dev.platform_data;
+	dss.pdev = pdev;
+	dss_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	dss.base = ioremap(dss_mem->start, resource_size(dss_mem));
 	if (!dss.base) {
 		DSSERR("can't ioremap DSS\n");
 		r = -ENOMEM;
 		goto fail0;
 	}
+	dss_clk_enable();
 
 	if (!skip_init) {
 		/* disable LCD and DIGIT output. This seems to fix the synclost
@@ -628,10 +660,12 @@ int dss_init(bool skip_init)
 				? dss_irq_handler_omap2
 				: dss_irq_handler_omap3,
 				0, "OMAP DSS", NULL);
-	else
-		r = request_irq(OMAP44XX_IRQ_DSS_DISPC,
+	else {
+		dss_irq = platform_get_irq(pdev, 0);
+		r = request_irq(dss_irq,
 				dss_irq_handler_omap2,
 				0, "OMAP DSS", NULL);
+	}
 
 	if (r < 0) {
 		DSSERR("omap2 dss: request_irq failed\n");
@@ -655,7 +689,7 @@ int dss_init(bool skip_init)
 	rev = dss_read_reg(DSS_REVISION);
 	printk(KERN_INFO "OMAP DSS rev %d.%d\n",
 			FLD_GET(rev, 7, 4), FLD_GET(rev, 3, 0));
-
+	dss_clk_disable();
 	return 0;
 
 fail2:

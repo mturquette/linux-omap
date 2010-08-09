@@ -204,8 +204,8 @@ struct seq_file;
 struct platform_device;
 
 /* core */
-void dss_clk_enable(enum dss_clock clks);
-void dss_clk_disable(enum dss_clock clks);
+void dss_clk_enable(void);
+void dss_clk_disable(void);
 unsigned long dss_clk_get_rate(enum dss_clock clk);
 int dss_need_ctx_restore(void);
 void dss_dump_clocks(struct seq_file *s);
@@ -252,7 +252,7 @@ void dss_init_writeback(struct platform_device *pdev);
 bool omap_dss_check_wb(struct writeback_cache_data *wb, int overlayId, int managerId);
 
 /* DSS */
-int dss_init(bool skip_init);
+int dss_init(bool skip_init, struct platform_device *pdev);
 void dss_exit(void);
 
 void dss_switch_tv_hdmi(int hdmi);
@@ -283,6 +283,7 @@ int dss_get_clock_div(struct dss_clock_info *cinfo);
 int dss_calc_clock_div(bool is_tft, unsigned long req_pck,
 		struct dss_clock_info *dss_cinfo,
 		struct dispc_clock_info *dispc_cinfo);
+static int use_count;
 
 /* SDI */
 #ifdef CONFIG_OMAP2_DSS_SDI
@@ -364,7 +365,7 @@ static inline void dpi_exit(void)
 #endif
 
 /* DISPC */
-int dispc_init(void);
+int dispc_init(struct platform_device *pdev);
 void dispc_exit(void);
 void dispc_dump_clocks(struct seq_file *s);
 void dispc_dump_irqs(struct seq_file *s);

@@ -292,6 +292,8 @@ static struct {
 	spinlock_t irq_stats_lock;
 	struct dispc_irq_stats irq_stats;
 #endif
+	struct omap_display_platform_data *pdata;
+	struct platform_device *pdev;
 } dispc;
 
 static void _omap_dispc_set_irqs(void);
@@ -1077,9 +1079,9 @@ void dispc_restore_context(void)
 static inline void enable_clocks(bool enable)
 {
 	if (enable)
-		dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+		dss_clk_enable();
 	else
-		dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+		dss_clk_disable();
 }
 
 bool dispc_go_busy(enum omap_channel channel)
@@ -1646,7 +1648,13 @@ void dispc_set_idle_mode(void)
 	l = FLD_MOD(l, 1, 13, 12);	/* MIDLEMODE: smart standby */
 	l = FLD_MOD(l, 1, 4, 3);	/* SIDLEMODE: smart idle */
 	l = FLD_MOD(l, 0, 2, 2);	/* ENWAKEUP */
+
+	/* Setting AUTOIDLE to 0 causes DSI
+	 * framedone timeouts on ES2.0
+	 */
+#if 0
 	l = FLD_MOD(l, 0, 0, 0);	/* AUTOIDLE */
+#endif
 	dispc_write_reg(DISPC_SYSCONFIG, l);
 
 }
@@ -2126,7 +2134,7 @@ static void _dispc_set_scaling_uv(enum omap_plane plane,
 		}
 
 	if (scale_y) {
-		fir_vinc = 1024 * (orig_height - 0) / (out_height - 0);
+		fir_vinc = 1024 * (orig_height - 1) / (out_height - 1);
 		if (fir_vinc > 4095)
 			fir_vinc = 4095;
 		vfir = get_scaling_coef(orig_height, out_height, 0,
@@ -2749,14 +2757,12 @@ static int _dispc_setup_plane(enum omap_plane plane,
 			return -EINVAL;
 		}
 
+#ifndef OMAP4430_REV_ES2_0
 		/* Must use 3-tap filter */
 		three_taps = width > 1280;
-
-		/* Should use 3-tap filter for upscaling, but HDMI gets
-		   out of sync if using 3-tap */
-		/* if (out_height > height)
-			three_taps = 1; */
-
+#else
+		three_taps = 0;
+#endif
 		if (three_taps) {
 			fclk = calc_fclk(channel, width, height,
 					out_width, out_height);
@@ -2778,7 +2784,7 @@ static int _dispc_setup_plane(enum omap_plane plane,
 		DSSDBG("required fclk rate = %lu Hz\n", fclk);
 		DSSDBG("current fclk rate = %lu Hz\n", dispc_fclk_rate());
 
-		if (fclk > dispc_fclk_rate()) {
+		if (!cpu_is_omap44xx() && fclk > dispc_fclk_rate()) {
 			DSSERR("failed to set up scaling, "
 					"required fclk rate = %lu Hz, "
 					"current fclk rate = %lu Hz\n",
@@ -3668,7 +3674,7 @@ void dispc_dump_regs(struct seq_file *s)
 {
 #define DUMPREG(r) seq_printf(s, "%-35s %08x\n", #r, dispc_read_reg(r))
 
-	dss_clk_enable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_enable();
 
 	DUMPREG(DISPC_REVISION);
 	DUMPREG(DISPC_SYSCONFIG);
@@ -3824,7 +3830,7 @@ void dispc_dump_regs(struct seq_file *s)
 	DUMPREG(DISPC_VID_PRELOAD(0));
 	DUMPREG(DISPC_VID_PRELOAD(1));
 
-	dss_clk_disable(DSS_CLK_ICK | DSS_CLK_FCK1);
+	dss_clk_disable();
 #undef DUMPREG
 }
 
@@ -4536,9 +4542,13 @@ static void _omap_dispc_initial_config(void)
 	dispc_read_plane_fifo_sizes();
 }
 
-int dispc_init(void)
+int dispc_init(struct platform_device *pdev)
 {
 	u32 rev;
+	struct resource *dispc_mem;
+
+	dispc.pdata = pdev->dev.platform_data;
+	dispc.pdev = pdev;
 
 	spin_lock_init(&dispc.irq_lock);
 
@@ -4549,7 +4559,8 @@ int dispc_init(void)
 
 	INIT_WORK(&dispc.error_work, dispc_error_worker);
 
-	dispc_base = dispc.base = ioremap(DISPC_BASE, DISPC_SZ_REGS);
+	dispc_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	dispc.base = ioremap(dispc_mem->start, resource_size(dispc_mem));
 	if (!dispc.base) {
 		DSSERR("can't ioremap DISPC\n");
 		return -ENOMEM;
@@ -4726,7 +4737,7 @@ int dispc_setup_wb(struct writeback_cache_data *wb)
 	REG_FLD_MOD(dispc_reg_att[input_plane], 0x1, 10, 10);
 	REG_FLD_MOD(dispc_reg_att[input_plane], 0x1, 19, 19);
 	REG_FLD_MOD(dispc_reg_att[plane], source, 18, 16);
-#ifdef OMAP4430_REV_ES2_0
+#ifndef CONFIG_OMAP4_ES1
 	/* Memory to memory mode bit is set on ES 2.0 */
 	REG_FLD_MOD(dispc_reg_att[plane], 1, 19, 19);
 #endif
