@@ -21,27 +21,55 @@
 
 #include <linux/clk.h>
 #include <linux/platform_device.h>
+#include <linux/i2c.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
+#include <sound/jack.h>
 
 #include <asm/mach-types.h>
 #include <plat/hardware.h>
 #include <plat/mux.h>
 
-#include "mcpdm.h"
 #include "omap-mcpdm.h"
+#include "omap-abe.h"
 #include "omap-pcm.h"
+#include "omap-mcbsp.h"
 #include "../codecs/twl6040.h"
+
+#ifdef CONFIG_SND_OMAP_SOC_HDMI
+#include "omap-hdmi.h"
+#endif
 
 static int twl6040_power_mode;
 
-static int sdp4430_hw_params(struct snd_pcm_substream *substream,
+static struct i2c_client *tps61305_client;
+static struct i2c_board_info tps61305_hwmon_info = {
+        I2C_BOARD_INFO("tps61305", 0x33),
+};
+
+static int sdp4430_tps61305_configure(void)
+{
+	u8 data[2];
+
+	data[0] = 0x01;
+	data[1] = 0x60;
+	if (i2c_master_send(tps61305_client, data, 2) != 2)
+		printk(KERN_ERR "I2C write to TSP61305 failed\n");
+
+	data[0] = 0x02;
+	if (i2c_master_send(tps61305_client, data, 2) != 2)
+		printk(KERN_ERR "I2C write to TSP61305 failed\n");
+
+	return 0;
+}
+
+static int sdp4430_mcpdm_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_dai *codec_dai = rtd->dai->codec_dai;
+	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	int clk_id, freq;
 	int ret;
 
@@ -60,10 +88,59 @@ static int sdp4430_hw_params(struct snd_pcm_substream *substream,
 		printk(KERN_ERR "can't set codec system clock\n");
 		return ret;
 	}
+	return ret;
 }
 
-static struct snd_soc_ops sdp4430_ops = {
-	.hw_params = sdp4430_hw_params,
+static struct snd_soc_ops sdp4430_mcpdm_ops = {
+	.hw_params = sdp4430_mcpdm_hw_params,
+};
+
+static int sdp4430_mcbsp_hw_params(struct snd_pcm_substream *substream,
+	struct snd_pcm_hw_params *params)
+{
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	int ret;
+
+	/* Set cpu DAI configuration */
+	ret = snd_soc_dai_set_fmt(cpu_dai,
+				  SND_SOC_DAIFMT_I2S |
+				  SND_SOC_DAIFMT_NB_NF |
+				  SND_SOC_DAIFMT_CBS_CFS);
+	if (ret < 0) {
+		printk(KERN_ERR "can't set cpu DAI configuration\n");
+		return ret;
+	}
+
+	// TODO: where does this clock come from (external source??) - do we need to enable it
+	/* Set McBSP clock to external */
+	ret = snd_soc_dai_set_sysclk(cpu_dai, OMAP_MCBSP_SYSCLK_CLKS_FCLK,
+				     64 * params_rate(params),
+				     SND_SOC_CLOCK_IN);
+	if (ret < 0) {
+		printk(KERN_ERR "can't set cpu system clock\n");
+		return ret;
+	}
+	return 0;
+}
+
+static struct snd_soc_ops sdp4430_mcbsp_ops = {
+	.hw_params = sdp4430_mcbsp_hw_params,
+};
+
+/* Headset jack */
+static struct snd_soc_jack hs_jack;
+
+/*Headset jack detection DAPM pins */
+static struct snd_soc_jack_pin hs_jack_pins[] = {
+	{
+		.pin = "Headset Mic",
+		.mask = SND_JACK_MICROPHONE,
+	},
+	{
+		.pin = "Headset Stereophone",
+		.mask = SND_JACK_HEADPHONE,
+	},
 };
 
 static int sdp4430_get_power_mode(struct snd_kcontrol *kcontrol,
@@ -102,6 +179,7 @@ static const struct snd_soc_dapm_widget sdp4430_twl6040_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Headset Mic", NULL),
 	SND_SOC_DAPM_HP("Headset Stereophone", NULL),
 	SND_SOC_DAPM_SPK("Earphone Spk", NULL),
+	SND_SOC_DAPM_INPUT("Aux/FM Stereo In"),
 };
 
 static const struct snd_soc_dapm_route audio_map[] = {
@@ -124,10 +202,15 @@ static const struct snd_soc_dapm_route audio_map[] = {
 
 	/* Earphone speaker */
 	{"Earphone Spk", NULL, "EP"},
+
+	/* Aux/FM Stereo In: AFML, AFMR */
+	{"AFML", NULL, "Aux/FM Stereo In"},
+	{"AFMR", NULL, "Aux/FM Stereo In"},
 };
 
-static int sdp4430_twl6040_init(struct snd_soc_codec *codec)
+static int sdp4430_twl6040_init(struct snd_soc_pcm_runtime *rtd)
 {
+	struct snd_soc_codec *codec = rtd->codec;
 	int ret;
 
 	/* Add SDP4430 specific controls */
@@ -137,57 +220,378 @@ static int sdp4430_twl6040_init(struct snd_soc_codec *codec)
 		return ret;
 
 	/* Add SDP4430 specific widgets */
-	ret = snd_soc_dapm_new_controls(codec, sdp4430_twl6040_dapm_widgets,
+	ret = snd_soc_dapm_new_controls(codec->dapm, sdp4430_twl6040_dapm_widgets,
 				ARRAY_SIZE(sdp4430_twl6040_dapm_widgets));
 	if (ret)
 		return ret;
 
 	/* Set up SDP4430 specific audio path audio_map */
-	snd_soc_dapm_add_routes(codec, audio_map, ARRAY_SIZE(audio_map));
+	snd_soc_dapm_add_routes(codec->dapm, audio_map, ARRAY_SIZE(audio_map));
 
 	/* SDP4430 connected pins */
-	snd_soc_dapm_enable_pin(codec, "Ext Mic");
-	snd_soc_dapm_enable_pin(codec, "Ext Spk");
-	snd_soc_dapm_enable_pin(codec, "Headset Mic");
-	snd_soc_dapm_enable_pin(codec, "Headset Stereophone");
+	snd_soc_dapm_enable_pin(codec->dapm, "Ext Mic");
+	snd_soc_dapm_enable_pin(codec->dapm, "Ext Spk");
+	snd_soc_dapm_enable_pin(codec->dapm, "AFML");
+	snd_soc_dapm_enable_pin(codec->dapm, "AFMR");
+	snd_soc_dapm_disable_pin(codec->dapm, "Headset Mic");
+	snd_soc_dapm_disable_pin(codec->dapm, "Headset Stereophone");
 
-	/* TWL6040 not connected pins */
-	snd_soc_dapm_nc_pin(codec, "AFML");
-	snd_soc_dapm_nc_pin(codec, "AFMR");
+	ret = snd_soc_dapm_sync(codec->dapm);
+	if (ret)
+		return ret;
 
-	ret = snd_soc_dapm_sync(codec);
+	/*Headset jack detection */
+	ret = snd_soc_jack_new(codec, "Headset Jack",
+				SND_JACK_HEADSET, &hs_jack);
+	if (ret)
+		return ret;
+
+	ret = snd_soc_jack_add_pins(&hs_jack, ARRAY_SIZE(hs_jack_pins),
+				hs_jack_pins);
+
+	twl6040_hs_jack_detect(codec, &hs_jack, SND_JACK_HEADSET);
 
 	return ret;
 }
 
+/* TODO: make this a separate BT CODEC driver or DUMMY */
+static struct snd_soc_dai_driver dai[] = {
+{
+	.name = "Bluetooth",
+	.playback = {
+		.stream_name = "Playback",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+	.capture = {
+		.stream_name = "Capture",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+},
+/* TODO: make this a separate FM CODEC driver or DUMMY */
+{
+	.name = "FM Digital",
+	.playback = {
+		.stream_name = "Playback",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+	.capture = {
+		.stream_name = "Capture",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+},
+/* TODO: make this a separate FM CODEC driver or DUMMY */
+{
+	.name = "MODEM",
+	.playback = {
+		.stream_name = "Playback",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+	.capture = {
+		.stream_name = "Capture",
+		.channels_min = 1,
+		.channels_max = 2,
+		.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
+					SNDRV_PCM_RATE_48000,
+		.formats = SNDRV_PCM_FMTBIT_S16_LE,
+	},
+}, };
+
 /* Digital audio interface glue - connects codec <--> CPU */
-static struct snd_soc_dai_link sdp4430_dai = {
-	.name = "TWL6040",
-	.stream_name = "TWL6040",
-	.cpu_dai = &omap_mcpdm_dai,
-	.codec_dai = &twl6040_dai,
-	.init = sdp4430_twl6040_init,
-	.ops = &sdp4430_ops,
+static struct snd_soc_dai_link sdp4430_dai[] = {
+
+/*
+ * Frontend DAIs - i.e. userspace visible interfaces (ALSA PCMs)
+ */
+
+	{
+		.name = "SDP4430 Media",
+		.stream_name = "Multimedia",
+
+		/* ABE components - MM-UL2 & MM_DL */
+		.cpu_dai_name = "MultiMedia1",
+		.platform_name = "omap-pcm-audio",
+
+		.dynamic = 1, /* codec DAI is dynamic */
+	},
+	{
+		.name = "SDP4430 Media Capture",
+		.stream_name = "Multimedia Capture",
+
+		/* ABE components - MM-UL 1 */
+		.cpu_dai_name = "MultiMedia2",
+		.platform_name = "omap-pcm-audio",
+
+		.dynamic = 1, /* codec DAI is dynamic */
+	},
+	{
+		.name = "SDP4430 Voice",
+		.stream_name = "Voice",
+
+		/* ABE components - VX-UL & VX-DL */
+		.cpu_dai_name = "Voice",
+		.platform_name = "omap-pcm-audio",
+
+		.dynamic = 1, /* codec DAI is dynamic */
+	},
+	{
+		.name = "SDP4430 Tones Playback",
+		.stream_name = "Tone Playback",
+
+		/* ABE components - TONES_DL */
+		.cpu_dai_name = "Tones",
+		.platform_name = "omap-pcm-audio",
+
+		.dynamic = 1, /* codec DAI is dynamic */
+	},
+	{
+		.name = "SDP4430 Vibra Playback",
+		.stream_name = "VIB-DL",
+
+		/* ABE components - DMIC UL 2 */
+		.cpu_dai_name = "Vibra",
+		.platform_name = "omap-pcm-audio",
+
+		.dynamic = 1, /* codec DAI is dynamic */
+	},
+
+/*
+ * Backend DAIs - i.e. dynamically matched interfaces, invisible to userspace.
+ * Matched to above interfaces at runtime, based upon use case.
+ */
+
+	{
+		.name = OMAP_ABE_BE_PDM_DL1,
+		.stream_name = "HS Playback",
+
+		/* ABE components - DL1 */
+		.cpu_dai_name = "omap-mcpdm-dai",
+		.platform_name = "omap-dsp-audio",
+
+		/* Phoenix - DL1 DAC */
+		.codec_dai_name =  "twl6040-dl1",
+		.codec_name = "twl6040-codec",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.init = sdp4430_twl6040_init,
+		.ops = &sdp4430_mcpdm_ops,
+		.be_id = OMAP_ABE_DAI_PDM_DL1,
+	},
+	{
+		.name = OMAP_ABE_BE_PDM_UL1,
+		.stream_name = "Analog Capture",
+
+		/* ABE components - UL1 */
+		.cpu_dai_name = "omap-mcpdm-dai",
+		.platform_name = "omap-dsp-audio",
+
+		/* Phoenix - UL ADC */
+		.codec_dai_name =  "twl6040-ul",
+		.codec_name = "twl6040-codec",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.ops = &sdp4430_mcpdm_ops,
+		.be_id = OMAP_ABE_DAI_PDM_UL,
+	},
+	{
+		.name = OMAP_ABE_BE_PDM_DL2,
+		.stream_name = "HF Playback",
+
+		/* ABE components - DL2 */
+		.cpu_dai_name = "omap-mcpdm-dai",
+		.platform_name = "omap-dsp-audio",
+
+		/* Phoenix - DL2 DAC */
+		.codec_dai_name =  "twl6040-dl2",
+		.codec_name = "twl6040-codec",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.ops = &sdp4430_mcpdm_ops,
+		.be_id = OMAP_ABE_DAI_PDM_DL2,
+	},
+	{
+		.name = OMAP_ABE_BE_PDM_VIB,
+		.stream_name = "Vibra",
+
+		/* ABE components - VIB1 DL */
+		.cpu_dai_name = "omap-mcpdm-dai",
+		.platform_name = "omap-dsp-audio",
+
+		/* Phoenix - PDM to PWM */
+		.codec_dai_name =  "twl6040-vib",
+		.codec_name = "twl6040-codec",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.ops = &sdp4430_mcpdm_ops,
+		.be_id = OMAP_ABE_DAI_PDM_VIB,
+	},
+	{
+		.name = OMAP_ABE_BE_BT_VX,
+		.stream_name = "BT",
+
+		/* ABE components - MCBSP1 - BT-VX */
+		.cpu_dai_name = "omap-mcbsp-dai.0",
+		.platform_name = "omap-dsp-audio",
+
+		/* Bluetooth */
+		.codec_dai_name = "Bluetooth",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.no_codec = 1, /* TODO: have a dummy CODEC */
+		.ops = &sdp4430_mcbsp_ops,
+		.be_id = OMAP_ABE_DAI_BT_VX,
+	},
+	{
+		.name = OMAP_ABE_BE_MM_EXT0,
+		.stream_name = "FM",
+
+		/* ABE components - MCBSP2 - MM-EXT */
+		.cpu_dai_name = "omap-mcbsp-dai.1",
+		.platform_name = "omap-dsp-audio",
+
+		/* FM */
+		.codec_dai_name = "FM Digital",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.no_codec = 1, /* TODO: have a dummy CODEC */
+		.ops = &sdp4430_mcbsp_ops,
+		.be_id = OMAP_ABE_DAI_MM_FM,
+	},
+	{
+		.name = OMAP_ABE_BE_MM_EXT1,
+		.stream_name = "MODEM",
+
+		/* ABE components - MCBSP2 - MM-EXT */
+		.cpu_dai_name = "omap-mcbsp-dai.1",
+		.platform_name = "omap-dsp-audio",
+
+		/* MODEM */
+		.codec_dai_name = "MODEM",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.no_codec = 1, /* TODO: have a dummy CODEC */
+		.ops = &sdp4430_mcbsp_ops,
+		.be_id = OMAP_ABE_DAI_MODEM,
+	},
+	{
+		.name = OMAP_ABE_BE_DMIC0,
+		.stream_name = "D Mic 0",
+
+		/* ABE components - DMIC UL 1 */
+		.cpu_dai_name = "omap-dmic-dai.0",
+		.platform_name = "omap-dsp-audio",
+
+		/* DMIC 1 */
+		.codec_dai_name = "dmic-hifi",
+		.codec_name = "dmic-codec.0",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.be_id = OMAP_ABE_DAI_DMIC0,
+	},
+	{
+		.name = OMAP_ABE_BE_DMIC1,
+		.stream_name = "D Mic 1",
+
+		/* ABE components - DMIC UL 1 */
+		.cpu_dai_name = "omap-dmic-dai.1",
+		.platform_name = "omap-dsp-audio",
+
+		/* DMIC 1 */
+		.codec_dai_name = "dmic-hifi",
+		.codec_name = "dmic-codec.1",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.be_id = OMAP_ABE_DAI_DMIC1,
+	},
+	{
+		.name = OMAP_ABE_BE_DMIC2,
+		.stream_name = "D Mic 2",
+
+		/* ABE components - DMIC UL 2 */
+		.cpu_dai_name = "omap-dmic-dai.2",
+		.platform_name = "omap-dsp-audio",
+
+		/* DMIC 2 */
+		.codec_dai_name = "dmic-hifi",
+		.codec_name = "dmic-codec.2",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.be_id = OMAP_ABE_DAI_DMIC2,
+	},
+#ifdef CONFIG_SND_OMAP_SOC_HDMI_LRG
+	{
+		.name = "hdmi",
+		.stream_name = "HDMI",
+
+		.cpu_dai_drv = &hdmi_dai,
+		.cpu_dai_name = 0,
+		.platform_name = "omap-pcm-audio",
+
+		.no_pcm = 1, /* don't create ALSA pcm for this */
+		.no_codec = 1, /* TODO: have a dummy CODEC */
+	},
+#endif
+	{
+		.name = "Debug to McBSP",
+		.stream_name = "Multimedia",
+
+		/* ABE components - MCBSP2 - MM-EXT */
+		.cpu_dai_name = "omap-mcbsp-dai.1",
+		.platform_name = "omap-pcm-audio",
+
+		/* FM */
+		.codec_dai_name = "FM Digital",
+
+		.no_codec = 1, /* TODO: have a dummy CODEC */
+		.ops = &sdp4430_mcbsp_ops,
+	},
+	{
+		.name = "Debug to McPDM",
+		.stream_name = "Headset Playback",
+
+		/* ABE components - DL1 */
+		.cpu_dai_name = "omap-mcpdm-dai",
+		.platform_name = "omap-pcm-audio",
+
+		/* Phoenix - DL1 DAC */
+		.codec_dai_name =  "twl6040-dl1",
+		.codec_name = "twl6040-codec",
+
+		.ops = &sdp4430_mcpdm_ops,
+	}
 };
 
 /* Audio machine driver */
 static struct snd_soc_card snd_soc_sdp4430 = {
 	.name = "SDP4430",
-	.platform = &omap_soc_platform,
-	.dai_link = &sdp4430_dai,
-	.num_links = 1,
-};
-
-/* Audio subsystem */
-static struct snd_soc_device sdp4430_snd_devdata = {
-	.card = &snd_soc_sdp4430,
-	.codec_dev = &soc_codec_dev_twl6040,
+	.dai_link = sdp4430_dai,
+	.num_links = ARRAY_SIZE(sdp4430_dai),
 };
 
 static struct platform_device *sdp4430_snd_device;
 
 static int __init sdp4430_soc_init(void)
 {
+	struct i2c_adapter *adapter;
 	int ret;
 
 	if (!machine_is_omap_4430sdp()) {
@@ -202,12 +606,27 @@ static int __init sdp4430_soc_init(void)
 		return -ENOMEM;
 	}
 
-	platform_set_drvdata(sdp4430_snd_device, &sdp4430_snd_devdata);
-	sdp4430_snd_devdata.dev = &sdp4430_snd_device->dev;
+	snd_soc_register_dais(&sdp4430_snd_device->dev, dai, ARRAY_SIZE(dai));
+
+	platform_set_drvdata(sdp4430_snd_device, &snd_soc_sdp4430);
 
 	ret = platform_device_add(sdp4430_snd_device);
 	if (ret)
 		goto err;
+
+        adapter = i2c_get_adapter(1);
+        if (!adapter) {
+                printk(KERN_ERR "can't get i2c adapter\n");
+                return -ENODEV;
+        }
+
+        tps61305_client = i2c_new_device(adapter, &tps61305_hwmon_info);
+        if (!tps61305_client) {
+                printk(KERN_ERR "can't add i2c device\n");
+                return -ENODEV;
+        }
+
+        sdp4430_tps61305_configure();
 
 	/* Codec starts in HP mode */
 	twl6040_power_mode = 1;
@@ -224,6 +643,7 @@ module_init(sdp4430_soc_init);
 static void __exit sdp4430_soc_exit(void)
 {
 	platform_device_unregister(sdp4430_snd_device);
+	i2c_unregister_device(tps61305_client);
 }
 module_exit(sdp4430_soc_exit);
 

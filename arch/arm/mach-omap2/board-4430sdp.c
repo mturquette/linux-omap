@@ -784,6 +784,22 @@ static struct twl4030_bci_platform_data sdp4430_bci_data = {
 	.low_bat_voltagemV		= 3300,
 };
 
+static struct twl4030_codec_audio_data twl6040_audio = {
+	.audio_mclk	= 38400000,
+	.audpwron_gpio  = 127,
+	.naudint_irq    = OMAP44XX_IRQ_SYS_2N,
+};
+
+static struct twl4030_codec_vibra_data twl6040_vibra = {
+	.audio_mclk	= 38400000,
+};
+
+static struct twl4030_codec_data twl6040_codec = {
+	.audio_mclk	= 38400000,
+	.audio = &twl6040_audio,
+	.vibra = &twl6040_vibra,
+};
+
 static struct twl4030_platform_data sdp4430_twldata = {
 	.irq_base	= TWL6030_IRQ_BASE,
 	.irq_end	= TWL6030_IRQ_END,
@@ -801,6 +817,9 @@ static struct twl4030_platform_data sdp4430_twldata = {
 	.vaux3		= &sdp4430_vaux3,
 	.madc           = &sdp4430_gpadc_data,
 	.bci            = &sdp4430_bci_data,
+
+	/* children */
+	.codec          = &twl6040_codec,
 };
 
 static struct bq2415x_platform_data sdp4430_bqdata = {

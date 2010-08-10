@@ -135,7 +135,16 @@
 #define TWL6040_HPPLL_ID		1
 #define TWL6040_LPPLL_ID		2
 
-extern struct snd_soc_dai twl6040_dai;
-extern struct snd_soc_codec_device soc_codec_dev_twl6040;
+/* STATUS (0x2E) fields */
+
+#define TWL6040_PLUGCOMP		0x02
+
+struct twl6040_setup_data {
+	void (*codec_enable)(int enable);
+	void *jack;
+};
+
+void twl6040_hs_jack_detect(struct snd_soc_codec *codec,
+			    struct snd_soc_jack *jack, int report);
 
 #endif /* End of __TWL6040_H__ */

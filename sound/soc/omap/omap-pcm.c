@@ -101,9 +101,10 @@ static int omap_pcm_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct omap_runtime_data *prtd = runtime->private_data;
 	struct omap_pcm_dma_data *dma_data;
+
 	int err = 0;
 
-	dma_data = snd_soc_dai_get_dma_data(rtd->dai->cpu_dai, substream);
+	dma_data = snd_soc_dai_get_dma_data(rtd->cpu_dai, substream);
 
 	/* return if this is a bufferless transfer e.g.
 	 * codec <--> BT codec or GSM modem -- lg FIXME */
@@ -233,6 +234,11 @@ static int omap_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 		prtd->period_index = -1;
 		omap_stop_dma(prtd->dma_ch);
+		/* Since we are using self linking, there is a
+		   chance that the DMA as re-enabled the channel
+		   just after disabling it */
+		while (omap_get_dma_active_status(prtd->dma_ch))
+			omap_stop_dma(prtd->dma_ch);
 		break;
 	default:
 		ret = -EINVAL;
@@ -276,6 +282,14 @@ static int omap_pcm_open(struct snd_pcm_substream *substream)
 	/* Ensure that buffer size is a multiple of period size */
 	ret = snd_pcm_hw_constraint_integer(runtime,
 					    SNDRV_PCM_HW_PARAM_PERIODS);
+	if (ret < 0)
+		goto out;
+
+	/* ABE needs a step of 24 * 4 data bits, and HDMI 32 * 4
+	* Ensure buffer size satisfies both constraints.
+	*/
+	ret = snd_pcm_hw_constraint_step(runtime, 0,
+					 SNDRV_PCM_HW_PARAM_BUFFER_BYTES, 384);
 	if (ret < 0)
 		goto out;
 
@@ -374,14 +388,14 @@ static int omap_pcm_new(struct snd_card *card, struct snd_soc_dai *dai,
 	if (!card->dev->coherent_dma_mask)
 		card->dev->coherent_dma_mask = DMA_BIT_MASK(64);
 
-	if (dai->playback.channels_min) {
+	if (dai->driver->playback.channels_min) {
 		ret = omap_pcm_preallocate_dma_buffer(pcm,
 			SNDRV_PCM_STREAM_PLAYBACK);
 		if (ret)
 			goto out;
 	}
 
-	if (dai->capture.channels_min) {
+	if (dai->driver->capture.channels_min) {
 		ret = omap_pcm_preallocate_dma_buffer(pcm,
 			SNDRV_PCM_STREAM_CAPTURE);
 		if (ret)
@@ -392,25 +406,45 @@ out:
 	return ret;
 }
 
-struct snd_soc_platform omap_soc_platform = {
-	.name		= "omap-pcm-audio",
-	.pcm_ops 	= &omap_pcm_ops,
+static struct snd_soc_platform_driver omap_soc_platform = {
+	.ops		= &omap_pcm_ops,
 	.pcm_new	= omap_pcm_new,
 	.pcm_free	= omap_pcm_free_dma_buffers,
 };
-EXPORT_SYMBOL_GPL(omap_soc_platform);
 
-static int __init omap_soc_platform_init(void)
+static __devinit int omap_pcm_probe(struct platform_device *pdev)
 {
-	return snd_soc_register_platform(&omap_soc_platform);
+	return snd_soc_register_platform(&pdev->dev,
+			&omap_soc_platform);
 }
-module_init(omap_soc_platform_init);
 
-static void __exit omap_soc_platform_exit(void)
+static int __devexit omap_pcm_remove(struct platform_device *pdev)
 {
-	snd_soc_unregister_platform(&omap_soc_platform);
+	snd_soc_unregister_platform(&pdev->dev);
+	return 0;
 }
-module_exit(omap_soc_platform_exit);
+
+static struct platform_driver omap_pcm_driver = {
+	.driver = {
+			.name = "omap-pcm-audio",
+			.owner = THIS_MODULE,
+	},
+
+	.probe = omap_pcm_probe,
+	.remove = __devexit_p(omap_pcm_remove),
+};
+
+static int __init snd_omap_pcm_init(void)
+{
+	return platform_driver_register(&omap_pcm_driver);
+}
+module_init(snd_omap_pcm_init);
+
+static void __exit snd_omap_pcm_exit(void)
+{
+	platform_driver_unregister(&omap_pcm_driver);
+}
+module_exit(snd_omap_pcm_exit);
 
 MODULE_AUTHOR("Jarkko Nikula <jhnikula@gmail.com>");
 MODULE_DESCRIPTION("OMAP PCM DMA module");
