@@ -4,7 +4,7 @@
 #
 menu "Texas Instruments shared transport line discipline"
 config TI_ST
-	tristate "shared transport core driver"
+	tristate "Shared transport core driver"
 	depends on RFKILL
 	select FW_LOADER
 	help
@@ -22,4 +22,12 @@ config ST_BT
 	  This enables the Bluetooth driver for TI BT/FM/GPS combo devices.
 	  This makes use of shared transport line discipline core driver to
 	  communicate with the BT core of the combo chip.
+
+config ST_FM
+	tristate "fm driver for ST"
+	select TI_ST
+	help
+	  This enables the FM driver for TI BT/FM/GPS combo devices
+	  This makes use of shared transport line discipline core driver to
+	  communicate with the FM core of the combo chip.
 endmenu
