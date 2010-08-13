@@ -117,7 +117,6 @@ static struct omap_dss_board_info panda_dss_data = {
 };
 
 static struct platform_device *panda_devices[] __initdata = {
-	&panda_dss_device,
 	&wl127x_device
 };
 
