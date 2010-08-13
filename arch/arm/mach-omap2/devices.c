@@ -896,6 +896,8 @@ void __init omap_display_init(struct omap_dss_board_info *board_data)
 	base_cm = ioremap(0x4A009100, 0x64);
 	__raw_writel(0x2, base_cm);
 
+	idx = 1;
+
 	for (i = 0; i < 7; i++)	{
 		l = snprintf(oh_name[i], MAX_OMAP_DSS_HWMOD_NAME_LEN, oh_name[i]);
 		WARN(l >= MAX_OMAP_DSS_HWMOD_NAME_LEN,

@@ -1254,6 +1254,7 @@ int hdmi_lib_enable(struct hdmi_config *cfg)
 		audio_cfg.cts = cfg->pixel_clock;
 	else
 		audio_cfg.cts = (cfg->pixel_clock * deep_color) / 100;
+	audio_cfg.cts = 74250;
 
 	/* audio channel */
 	audio_cfg.if_sample_size = 0x0;
@@ -1271,6 +1272,13 @@ int hdmi_lib_enable(struct hdmi_config *cfg)
 
 	r = hdmi_core_video_config(&v_core_cfg);
 
+	/* TODO: Is this configuration correct? */
+	audio_cfg.aud_par_busclk = (((128 * 31) - 1) << 8);
+	audio_cfg.cts_mode = 0;
+
+	r = hdmi_core_video_config(&v_core_cfg);
+
+	/* hnagalla */
 	hdmi_core_audio_config(av_name, &audio_cfg);
 	hdmi_core_audio_mode_enable(av_name);
 
