@@ -53,6 +53,11 @@
 #define HUB_POWER 1
 #define HUB_NRESET 39
 
+static struct platform_device sdp4430_hdmi_audio_device = {
+	.name		= "hdmi-dai",
+	.id		= -1,
+};
+
 static int panda_panel_enable_hdmi(struct omap_dss_device *dssdev)
 {
 	gpio_request(HDMI_GPIO_60 , "hdmi_gpio_60");
@@ -109,6 +114,7 @@ static struct platform_device panda_dss_device = {
 
 static struct platform_device *panda_devices[] __initdata = {
 	&panda_dss_device,
+	&sdp4430_hdmi_audio_device,
 };
 
 static struct omap_board_config_kernel panda_config[] __initdata = {
