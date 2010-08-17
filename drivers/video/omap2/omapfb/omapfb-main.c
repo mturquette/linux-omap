@@ -1009,7 +1009,7 @@ int omapfb_apply_changes(struct fb_info *fbi, int init)
 		}
 
 		if (init || (ovl->caps & OMAP_DSS_OVL_CAP_SCALE) == 0) {
-			int rotation = (var->rotate + ofbi->rotation[i]) % 4;
+			rotation = (var->rotate + ofbi->rotation[i]) % 4;
 			if (ofbi->rotation_type == OMAP_DSS_ROT_TILER) {
 					outw = var->xres;
 					outh = var->yres;
@@ -1028,7 +1028,7 @@ int omapfb_apply_changes(struct fb_info *fbi, int init)
 			DBG("its vid pipeline so sclaing is enabled, still\
 				we will not scale for output size,\
 				just maintain the input size");
-			int rotation = (var->rotate + ofbi->rotation[i]) % 4;
+			rotation = (var->rotate + ofbi->rotation[i]) % 4;
 			if (rotation == FB_ROTATE_CW ||
 					rotation == FB_ROTATE_CCW) {
 				outw = var->yres;

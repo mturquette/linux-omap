@@ -1042,8 +1042,7 @@ int omapvid_apply_changes(struct omap_vout_device *vout)
 void omap_vout_isr(void *arg, unsigned int irqstatus)
 {
 	int ret;
-	u32 addr, fid;
-	u32 uv_addr;
+	u32 addr, uv_addr;
 	struct omap_overlay *ovl;
 	struct timeval timevalue;
 	struct omapvideo_info *ovid;
