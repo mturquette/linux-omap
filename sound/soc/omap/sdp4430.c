@@ -44,23 +44,24 @@
 
 static int twl6040_power_mode;
 
-static struct i2c_client *tps61305_client;
-static struct i2c_board_info tps61305_hwmon_info = {
-        I2C_BOARD_INFO("tps61305", 0x33),
+static struct i2c_client *tps6130x_client;
+static struct i2c_board_info tps6130x_hwmon_info = {
+	I2C_BOARD_INFO("tps6130x", 0x33),
 };
 
-static int sdp4430_tps61305_configure(void)
+/* configure the TPS6130x Handsfree Boost Converter */
+static int sdp4430_tps6130x_configure(void)
 {
 	u8 data[2];
 
 	data[0] = 0x01;
 	data[1] = 0x60;
-	if (i2c_master_send(tps61305_client, data, 2) != 2)
-		printk(KERN_ERR "I2C write to TSP61305 failed\n");
+	if (i2c_master_send(tps6130x_client, data, 2) != 2)
+		printk(KERN_ERR "I2C write to TPS6130x failed\n");
 
 	data[0] = 0x02;
-	if (i2c_master_send(tps61305_client, data, 2) != 2)
-		printk(KERN_ERR "I2C write to TSP61305 failed\n");
+	if (i2c_master_send(tps6130x_client, data, 2) != 2)
+		printk(KERN_ERR "I2C write to TPS6130x failed\n");
 
 	return 0;
 }
@@ -327,6 +328,47 @@ static struct snd_soc_dai_driver dai[] = {
 },
 };
 
+static const char *mm1_be[] = {
+		OMAP_ABE_BE_PDM_DL1,
+		OMAP_ABE_BE_PDM_UL1,
+		OMAP_ABE_BE_PDM_DL2,
+		OMAP_ABE_BE_BT_VX,
+		OMAP_ABE_BE_MM_EXT0,
+		OMAP_ABE_BE_DMIC0,
+		OMAP_ABE_BE_DMIC1,
+		OMAP_ABE_BE_DMIC2,
+};
+
+static const char *mm2_be[] = {
+		OMAP_ABE_BE_PDM_UL1,
+		OMAP_ABE_BE_BT_VX,
+		OMAP_ABE_BE_MM_EXT0,
+		OMAP_ABE_BE_DMIC0,
+		OMAP_ABE_BE_DMIC1,
+		OMAP_ABE_BE_DMIC2,
+};
+
+static const char *tones_be[] = {
+		OMAP_ABE_BE_PDM_DL1,
+		OMAP_ABE_BE_PDM_DL2,
+		OMAP_ABE_BE_BT_VX,
+		OMAP_ABE_BE_MM_EXT0,
+};
+
+static const char *vib_be[] = {
+		OMAP_ABE_BE_PDM_VIB,
+};
+
+static const char *modem_be[] = {
+		OMAP_ABE_BE_PDM_DL1,
+		OMAP_ABE_BE_PDM_UL1,
+		OMAP_ABE_BE_PDM_DL2,
+		OMAP_ABE_BE_BT_VX,
+		OMAP_ABE_BE_DMIC0,
+		OMAP_ABE_BE_DMIC1,
+		OMAP_ABE_BE_DMIC2,
+};
+
 /* Digital audio interface glue - connects codec <--> CPU */
 static struct snd_soc_dai_link sdp4430_dai[] = {
 
@@ -342,7 +384,9 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.cpu_dai_name = "MultiMedia1",
 		.platform_name = "omap-pcm-audio",
 
-		.dynamic = 1, /* codec DAI is dynamic */
+		.dynamic = 1, /* BE is dynamic */
+		.supported_be = mm1_be,
+		.num_be = ARRAY_SIZE(mm1_be),
 	},
 	{
 		.name = "SDP4430 Media Capture",
@@ -352,7 +396,9 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.cpu_dai_name = "MultiMedia2",
 		.platform_name = "omap-pcm-audio",
 
-		.dynamic = 1, /* codec DAI is dynamic */
+		.dynamic = 1, /* BE is dynamic */
+		.supported_be = mm2_be,
+		.num_be = ARRAY_SIZE(mm2_be),
 	},
 	{
 		.name = "SDP4430 Voice",
@@ -362,7 +408,9 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.cpu_dai_name = "Voice",
 		.platform_name = "omap-pcm-audio",
 
-		.dynamic = 1, /* codec DAI is dynamic */
+		.dynamic = 1, /* BE is dynamic */
+		.supported_be = mm1_be,
+		.num_be = ARRAY_SIZE(mm1_be),
 	},
 	{
 		.name = "SDP4430 Tones Playback",
@@ -372,7 +420,9 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.cpu_dai_name = "Tones",
 		.platform_name = "omap-pcm-audio",
 
-		.dynamic = 1, /* codec DAI is dynamic */
+		.dynamic = 1, /* BE is dynamic */
+		.supported_be = tones_be,
+		.num_be = ARRAY_SIZE(tones_be),
 	},
 	{
 		.name = "SDP4430 Vibra Playback",
@@ -382,7 +432,63 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.cpu_dai_name = "Vibra",
 		.platform_name = "omap-pcm-audio",
 
-		.dynamic = 1, /* codec DAI is dynamic */
+		.dynamic = 1, /* BE is dynamic */
+		.supported_be = vib_be,
+		.num_be = ARRAY_SIZE(vib_be),
+	},
+	{
+		.name = "SDP4430 MODEM",
+		.stream_name = "MODEM",
+
+		/* ABE components - MODEM <-> McBSP2 */
+		.cpu_dai_name = "MODEM",
+		.platform_name = "omap-dsp-audio",
+
+		.dynamic = 1, /* BE is dynamic */
+		.supported_be = modem_be,
+		.num_be = ARRAY_SIZE(modem_be),
+	},
+#ifdef CONFIG_SND_OMAP_SOC_HDMI
+	{
+		.name = "hdmi",
+		.stream_name = "HDMI",
+
+		.cpu_dai_name = "hdmi-dai",
+		.platform_name = "omap-pcm-audio",
+
+		/* HDMI*/
+		.codec_dai_name = "HDMI",
+
+		.no_codec = 1,
+	},
+#endif
+	{
+		.name = "Legacy McBSP",
+		.stream_name = "Multimedia",
+
+		/* ABE components - MCBSP2 - MM-EXT */
+		.cpu_dai_name = "omap-mcbsp-dai.1",
+		.platform_name = "omap-pcm-audio",
+
+		/* FM */
+		.codec_dai_name = "FM Digital",
+
+		.no_codec = 1, /* TODO: have a dummy CODEC */
+		.ops = &sdp4430_mcbsp_ops,
+	},
+	{
+		.name = "Legacy McPDM",
+		.stream_name = "Headset Playback",
+
+		/* ABE components - DL1 */
+		.cpu_dai_name = "omap-mcpdm-dai",
+		.platform_name = "omap-pcm-audio",
+
+		/* Phoenix - DL1 DAC */
+		.codec_dai_name =  "twl6040-dl1",
+		.codec_name = "twl6040-codec",
+
+		.ops = &sdp4430_mcpdm_ops,
 	},
 /*
  * Backend DAIs - i.e. dynamically matched interfaces, invisible to userspace.
@@ -504,7 +610,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 	},
 	{
 		.name = OMAP_ABE_BE_DMIC0,
-		.stream_name = "D Mic 0",
+		.stream_name = "DMIC0",
 
 		/* ABE components - DMIC UL 1 */
 		.cpu_dai_name = "omap-dmic-dai.0",
@@ -519,7 +625,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 	},
 	{
 		.name = OMAP_ABE_BE_DMIC1,
-		.stream_name = "D Mic 1",
+		.stream_name = "DMIC1",
 
 		/* ABE components - DMIC UL 1 */
 		.cpu_dai_name = "omap-dmic-dai.1",
@@ -534,7 +640,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 	},
 	{
 		.name = OMAP_ABE_BE_DMIC2,
-		.stream_name = "D Mic 2",
+		.stream_name = "DMIC2",
 
 		/* ABE components - DMIC UL 2 */
 		.cpu_dai_name = "omap-dmic-dai.2",
@@ -547,46 +653,6 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.no_pcm = 1, /* don't create ALSA pcm for this */
 		.be_id = OMAP_ABE_DAI_DMIC2,
 	},
-	{
-		.name = "hdmi",
-		.stream_name = "HDMI",
-
-		.cpu_dai_name = "hdmi-dai",
-		.platform_name = "omap-pcm-audio",
-
-		/* HDMI*/
-		.codec_dai_name = "HDMI",
-
-		.no_codec = 1,
-	},
-	{
-		.name = "Debug to McBSP",
-		.stream_name = "Multimedia",
-
-		/* ABE components - MCBSP2 - MM-EXT */
-		.cpu_dai_name = "omap-mcbsp-dai.1",
-		.platform_name = "omap-pcm-audio",
-
-		/* FM */
-		.codec_dai_name = "FM Digital",
-
-		.no_codec = 1, /* TODO: have a dummy CODEC */
-		.ops = &sdp4430_mcbsp_ops,
-	},
-	{
-		.name = "Debug to McPDM",
-		.stream_name = "Headset Playback",
-
-		/* ABE components - DL1 */
-		.cpu_dai_name = "omap-mcpdm-dai",
-		.platform_name = "omap-pcm-audio",
-
-		/* Phoenix - DL1 DAC */
-		.codec_dai_name =  "twl6040-dl1",
-		.codec_name = "twl6040-codec",
-
-		.ops = &sdp4430_mcpdm_ops,
-	}
 };
 
 /* Audio machine driver */
@@ -603,8 +669,8 @@ static int __init sdp4430_soc_init(void)
 	struct i2c_adapter *adapter;
 	int ret;
 
-	if (!machine_is_omap_4430sdp()) {
-		pr_debug("Not SDP4430!\n");
+	if (!machine_is_omap_4430sdp() && !machine_is_omap4_panda()) {
+		pr_debug("Not SDP4430 or PandaBoard!\n");
 		return -ENODEV;
 	}
 	printk(KERN_INFO "SDP4430 SoC init\n");
@@ -629,13 +695,15 @@ static int __init sdp4430_soc_init(void)
                 return -ENODEV;
         }
 
-        tps61305_client = i2c_new_device(adapter, &tps61305_hwmon_info);
-        if (!tps61305_client) {
+	tps6130x_client = i2c_new_device(adapter, &tps6130x_hwmon_info);
+	if (!tps6130x_client) {
                 printk(KERN_ERR "can't add i2c device\n");
                 return -ENODEV;
         }
 
-        sdp4430_tps61305_configure();
+	/* Only configure the TPS6130x on SDP4430 */
+	if (machine_is_omap_4430sdp())
+		sdp4430_tps6130x_configure();
 
 	/* Codec starts in HP mode */
 	twl6040_power_mode = 1;
@@ -652,7 +720,7 @@ module_init(sdp4430_soc_init);
 static void __exit sdp4430_soc_exit(void)
 {
 	platform_device_unregister(sdp4430_snd_device);
-	i2c_unregister_device(tps61305_client);
+	i2c_unregister_device(tps6130x_client);
 }
 module_exit(sdp4430_soc_exit);
 

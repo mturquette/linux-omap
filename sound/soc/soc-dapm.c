@@ -28,6 +28,7 @@
  *    o Support for reduced codec oversampling rates.
  *    o Support for reduced codec bias currents.
  */
+
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
@@ -138,7 +139,7 @@ int soc_widget_update_bits(struct snd_soc_dapm_widget *w, unsigned short reg,
 	old = soc_widget_read(w, reg);
 	new = (old & ~mask) | value;
 	change = old != new;
-	if (change)
+	//if (change)
 		soc_widget_write(w, reg, new);
 
 	return change;
@@ -179,7 +180,7 @@ static void scenario_clear_paths(struct snd_soc_dapm_context *dapm)
 /*
  * find all the paths between source and sink
  */
-static int scenario_find_paths (struct snd_soc_dapm_context *dapm,
+static int scenario_find_playback_paths (struct snd_soc_dapm_context *dapm,
 		struct snd_soc_dapm_widget *source, struct snd_soc_dapm_widget *sink,
 		int hops)
 {
@@ -191,7 +192,7 @@ static int scenario_find_paths (struct snd_soc_dapm_context *dapm,
 		return 0;
 
 	if (source == sink) {
-		printk("soc: found route with length %d\n", hops);
+		dev_dbg(dapm->dev,"** found route with length %d\n", hops);
 		dapm->num_valid_paths++;
 		return 1;
 	}
@@ -200,13 +201,64 @@ static int scenario_find_paths (struct snd_soc_dapm_context *dapm,
 		return 0;
 	source->hops = hops;
 
+	/* check all the output paths on this source widget */
 	list_for_each(lp, &source->sinks) {
 		path = list_entry(lp, struct snd_soc_dapm_path, list_source);
 
+		dev_dbg(dapm->dev,"%d:try source %s path %s len %d connect %d\n",
+				hops, source->name, path->name, path->length, path->connect);
+
+		/* been here before ? */
 		if (path->length && path->length <= hops)
 			continue;
 
-		if (path->sink && scenario_find_paths(dapm, path->sink, sink, hops + 1)) {
+		/* check down the next path if connected */
+		if (path->sink && path->connect &&
+				scenario_find_playback_paths(dapm, path->sink, sink, hops + 1)) {
+			path->length = hops;
+			if (!dist || dist > path->length)
+				dist = path->length;
+		}
+	}
+
+	return dist;
+}
+
+static int scenario_find_capture_paths (struct snd_soc_dapm_context *dapm,
+		struct snd_soc_dapm_widget *source, struct snd_soc_dapm_widget *sink,
+		int hops)
+{
+	struct list_head *lp;
+	struct snd_soc_dapm_path *path;
+	int dist = 0;
+
+	if (hops > MAX_HOPS)
+		return 0;
+
+	if (source == sink) {
+		dev_dbg(dapm->dev,"** found route with length %d\n", hops);
+		dapm->num_valid_paths++;
+		return 1;
+	}
+
+	if (sink->hops && sink->hops <= hops)
+		return 0;
+	sink->hops = hops;
+
+	/* check all the output paths on this source widget */
+	list_for_each(lp, &sink->sources) {
+		path = list_entry(lp, struct snd_soc_dapm_path, list_sink);
+
+		dev_dbg(dapm->dev,"%d:try sink %s path %s len %d connect %d\n",
+				hops, sink->name, path->name, path->length, path->connect);
+
+		/* been here before ? */
+		if (path->length && path->length <= hops)
+			continue;
+
+		/* check down the next path if connected */
+		if (path->source && path->connect &&
+				scenario_find_capture_paths(dapm, source, path->source, hops + 1)) {
 			path->length = hops;
 			if (!dist || dist > path->length)
 				dist = path->length;
@@ -219,11 +271,23 @@ static int scenario_find_paths (struct snd_soc_dapm_context *dapm,
 /*
  * traverse the tree from sink to source via the shortest path
  */
-static int scenario_get_paths(struct snd_soc_dapm_context *dapm,
+static int scenario_get_playback_paths(struct snd_soc_dapm_context *dapm,
 		struct snd_soc_dapm_widget *source, struct snd_soc_dapm_widget *sink)
 {
 	dapm->num_valid_paths = 0;
-	scenario_find_paths(dapm, source, sink, 1);
+	dev_dbg(dapm->dev, "check playback path from %s to %s\n",
+			source->name, sink->name);
+	scenario_find_playback_paths(dapm, source, sink, 1);
+	return dapm->num_valid_paths;
+}
+
+static int scenario_get_capture_paths(struct snd_soc_dapm_context *dapm,
+		struct snd_soc_dapm_widget *source, struct snd_soc_dapm_widget *sink)
+{
+	dapm->num_valid_paths = 0;
+	dev_dbg(dapm->dev, "check capture  path to %s from %s\n",
+			source->name, sink->name);
+	scenario_find_capture_paths(dapm, sink, source, 1);
 	return dapm->num_valid_paths;
 }
 
@@ -237,7 +301,7 @@ static int scenario_get_paths(struct snd_soc_dapm_context *dapm,
  * Returns 0 for success.
  */
 int snd_soc_scenario_set_path(struct snd_soc_dapm_context *dapm,
-	const char *source_name, const char *sink_name)
+	const char *source_name, const char *sink_name, int stream)
 {
 	struct snd_soc_dapm_widget *sink = NULL, *source = NULL;
 	struct list_head *l = NULL;
@@ -266,7 +330,10 @@ int snd_soc_scenario_set_path(struct snd_soc_dapm_context *dapm,
 		return -EINVAL;
 	}
 
-	routes = scenario_get_paths(dapm, source, sink);
+	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+		routes = scenario_get_playback_paths(dapm, source, sink);
+	else
+		routes = scenario_get_capture_paths(dapm, source, sink);
 	scenario_clear_paths(dapm);
 
 	return routes;
@@ -2261,16 +2328,25 @@ static void soc_dapm_stream_event(struct snd_soc_dapm_context *dapm,
 int snd_soc_dapm_stream_event(struct snd_soc_pcm_runtime *rtd,
 	const char *stream, int event)
 {
-	struct snd_soc_codec *codec = rtd->codec;
-	struct snd_soc_platform *platform = rtd->platform;
+	int i;
 
 	if (stream == NULL)
 		return 0;
 
-	mutex_lock(&codec->mutex);
-	soc_dapm_stream_event(codec->dapm, stream, event);
-	mutex_unlock(&codec->mutex);
-	soc_dapm_stream_event(platform->dapm, stream, event);
+	if (rtd->dai_link->dynamic) {
+		for (i = 0; i < rtd->num_be; i++) {
+			struct snd_soc_platform *platform = rtd->be_rtd[i]->platform;
+
+			soc_dapm_stream_event(platform->dapm, stream, event);
+		}
+	} else {
+		struct snd_soc_codec *codec = rtd->codec;
+
+		mutex_lock(&codec->mutex);
+		soc_dapm_stream_event(codec->dapm, stream, event);
+		mutex_unlock(&codec->mutex);
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(snd_soc_dapm_stream_event);

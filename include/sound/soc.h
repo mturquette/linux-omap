@@ -574,6 +574,10 @@ struct snd_soc_dai_link {
 	const char *cpu_dai_name;
 	const char *codec_dai_name;
 
+	/* supported BE */
+	const char **supported_be;
+	int num_be;
+
 	/* Keep DAI active over suspend */
 	unsigned int ignore_suspend:1;
 
@@ -643,6 +647,7 @@ struct snd_soc_pcm_runtime  {
 	struct snd_soc_card *card;
 	struct snd_soc_dai_link *dai_link;
 	struct mutex pcm_mutex;
+	struct snd_pcm_ops ops;
 
 	unsigned int complete:1;
 	unsigned int dev_registered:1;

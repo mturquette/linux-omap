@@ -35,9 +35,11 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
+#include <linux/dma-mapping.h>
 
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
+#include <plat/dma.h>
 
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -55,16 +57,17 @@
 // TODO: change to S16 and use ARM SIMD to re-format to S32
 #define ABE_FORMATS	 (SNDRV_PCM_FMTBIT_S32_LE)
 
-// TODO: make all these into virtual registers or similar */
-#define ABE_NUM_MIXERS		21
+// TODO: make all these into virtual registers or similar - split out by type */
+#define ABE_NUM_MIXERS		22
 #define ABE_NUM_MUXES		12
-#define ABE_NUM_WIDGETS	41	/* TODO - refine this val */
+#define ABE_NUM_WIDGETS	44	/* TODO - refine this val */
 #define ABE_NUM_DAPM_REG		\
 	(ABE_NUM_MIXERS + ABE_NUM_MUXES + ABE_NUM_WIDGETS)
 #define ABE_WIDGET_START	(ABE_NUM_MIXERS + ABE_NUM_MUXES)
 #define ABE_WIDGET_END	(ABE_WIDGET_START + ABE_NUM_WIDGETS)
 #define ABE_BE_START		(ABE_WIDGET_START + 7)
 #define ABE_BE_END	(ABE_BE_START + 10)
+#define ABE_MUX_BASE	ABE_NUM_MIXERS
 
 /* Uplink MUX path identifiers from ROUTE_UL */
 #define ABE_MM_UL1(x)		(x + ABE_NUM_MIXERS)
@@ -79,6 +82,24 @@
 #define ABE_OPP_25		0
 #define ABE_OPP_50		1
 #define ABE_OPP_100		2
+
+#define ABE_ROUTES_UL		14
+
+/* TODO: fine tune for MODEM */
+static const struct snd_pcm_hardware omap_abe_hardware = {
+	.info			= SNDRV_PCM_INFO_MMAP |
+				  SNDRV_PCM_INFO_MMAP_VALID |
+				  SNDRV_PCM_INFO_INTERLEAVED |
+				  SNDRV_PCM_INFO_PAUSE |
+				  SNDRV_PCM_INFO_RESUME,
+	.formats		= SNDRV_PCM_FMTBIT_S16_LE |
+				  SNDRV_PCM_FMTBIT_S32_LE,
+	.period_bytes_min	= 32,
+	.period_bytes_max	= 64 * 1024,
+	.periods_min		= 2,
+	.periods_max		= 255,
+	.buffer_bytes_max	= 128 * 1024,
+};
 
 /*
  * ABE driver
@@ -102,7 +123,6 @@ struct abe_data {
 	struct mutex mutex;
 
 	int fe_id;
-	struct omap_aess_fe fe[5];
 
 	/* DAPM mixer config - TODO: some of this can be replaced with HAL update */
 	u32 dapm[ABE_NUM_DAPM_REG];
@@ -116,6 +136,21 @@ struct abe_data {
 	int tones_dl2_volume;
 	int voice_dl2_volume;
 	int capture_dl2_volume;
+
+	int sdt_up_volume;
+	int sdt_dl1_volume;
+
+	int audul_mm_volume;
+	int audul_tones_volume;
+	int audul_ul_volume;
+	int audul_vx_volume;
+
+	int vxrec_mm_volume;
+	int vxrec_tones_volume;
+	int vxrec_vx_ul_volume;
+	int vxrec_vx_dl_volume;
+
+	abe_router_t router[16];
 };
 
 static struct abe_data *abe;
@@ -141,12 +176,8 @@ static int abe_dsp_write(struct snd_soc_platform *platform, unsigned int reg,
 	struct abe_data *priv = snd_soc_platform_get_drvdata(platform);
 	priv->dapm[reg] = val;
 
-	printk("fe: %d widget %d %s\n", abe->fe_id,
-			reg - ABE_WIDGET_START, val ? "on" : "off");
-
-	if (reg >= ABE_BE_START && reg < ABE_BE_END)
-		abe->fe[abe->fe_id].active[reg - ABE_BE_START] = val;
-
+	//dev_dbg(platform->dev, "fe: %d widget %d %s\n", abe->fe_id,
+	//		reg - ABE_WIDGET_START, val ? "on" : "off");
 	return 0;
 }
 
@@ -157,10 +188,9 @@ static void abe_init_engine(struct snd_soc_platform *platform)
 	struct omap4_abe_dsp_pdata *pdata = priv->abe_pdata;
 #endif
 	struct platform_device *pdev = priv->pdev;
-	abe_opp_t OPP = ABE_OPP100;
 	abe_equ_t dl2_eq;
 
-	dl2_eq.equ_length = 25;
+	dl2_eq.equ_length = ARRAY_SIZE(DL2_COEF);
 
 	/* build the coefficient parameter for the equalizer api */
 	memcpy(dl2_eq.coef.type1, DL2_COEF, sizeof(DL2_COEF));
@@ -182,37 +212,10 @@ static void abe_init_engine(struct snd_soc_platform *platform)
 
 
 	/* Config OPP 100 for now */
-	abe_set_opp_processing(OPP);
+	abe_set_opp_processing(ABE_OPP100);
 
 	/* "tick" of the audio engine */
 	abe_write_event_generator(EVENT_TIMER);
-
-	/* TODO: make these ALSA kcontrols */
-	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_0MS, MIX_DL1_INPUT_MM_DL);
-	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_0MS, MIX_DL1_INPUT_MM_UL2);
-	abe_write_mixer(MIXDL1, GAIN_M6dB, RAMP_0MS, MIX_DL1_INPUT_VX_DL);
-	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_0MS, MIX_DL1_INPUT_TONES);
-
-	abe_write_mixer(MIXDL2, GAIN_M6dB, RAMP_0MS, MIX_DL2_INPUT_TONES);
-	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_0MS, MIX_DL2_INPUT_VX_DL);
-	abe_write_mixer(MIXDL2, GAIN_M6dB, RAMP_0MS, MIX_DL2_INPUT_MM_DL);
-	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_0MS, MIX_DL2_INPUT_MM_UL2);
-
-	abe_write_mixer(MIXSDT, MUTE_GAIN, RAMP_0MS, MIX_SDT_INPUT_UP_MIXER);
-	abe_write_mixer(MIXSDT, GAIN_0dB, RAMP_0MS, MIX_SDT_INPUT_DL1_MIXER);
-
-	abe_write_mixer(MIXECHO, MUTE_GAIN, RAMP_0MS, GAIN_LEFT_OFFSET);
-	abe_write_mixer(MIXECHO, MUTE_GAIN, RAMP_0MS, GAIN_RIGHT_OFFSET);
-
-	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_0MS, MIX_AUDUL_INPUT_TONES);
-	abe_write_mixer(MIXAUDUL, GAIN_M6dB, RAMP_0MS, MIX_AUDUL_INPUT_UPLINK);
-	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_0MS, MIX_AUDUL_INPUT_MM_DL);
-	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_0MS, MIX_AUDUL_INPUT_VX_DL);
-
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_0MS, MIX_VXREC_INPUT_TONES);
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_0MS, MIX_VXREC_INPUT_VX_DL);
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_0MS, MIX_VXREC_INPUT_MM_DL);
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_0MS, MIX_VXREC_INPUT_VX_UL);
 
 	/* load the high-pass coefficient of IHF-Right */
 	abe_write_equalizer(EQ2L, &dl2_eq);
@@ -226,6 +229,10 @@ static void abe_init_engine(struct snd_soc_platform *platform)
 		pdata->device_idle(pdev);
 #endif
 }
+
+/*
+ * These TLV settings will need fine tuned for each individual control
+ */
 
 /* Media DL1 volume control from -50 to 30 dB in 6 dB steps */
 static DECLARE_TLV_DB_SCALE(mm_dl1_tlv, -5000, 600, 3000);
@@ -251,9 +258,35 @@ static DECLARE_TLV_DB_SCALE(voice_dl2_tlv, -5000, 600, 3000);
 /* Media DL2 volume control from -50 to 30 dB in 6 dB steps */
 static DECLARE_TLV_DB_SCALE(capture_dl2_tlv, -5000, 600, 3000);
 
-static const struct snd_kcontrol_new abe_snd_controls[] = {
+/* SDT volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(sdt_ul_tlv, -5000, 600, 3000);
 
-};
+/* SDT volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(sdt_dl_tlv, -5000, 600, 3000);
+
+/* AUDUL volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(audul_mm_tlv, -5000, 600, 3000);
+
+/* AUDUL volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(audul_tones_tlv, -5000, 600, 3000);
+
+/* AUDUL volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(audul_vx_ul_tlv, -5000, 600, 3000);
+
+/* AUDUL volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(audul_vx_dl_tlv, -5000, 600, 3000);
+
+/* VXREC volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(vxrec_mm_dl_tlv, -5000, 600, 3000);
+
+/* VXREC volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(vxrec_tones_tlv, -5000, 600, 3000);
+
+/* VXREC volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(vxrec_vx_dl_tlv, -5000, 600, 3000);
+
+/* VXREC volume control from -50 to 30 dB in 6 dB steps */
+static DECLARE_TLV_DB_SCALE(vxrec_vx_ul_tlv, -5000, 600, 3000);
 
 //TODO: we have to use the shift value atm to represent register id due to current HAL
 static int dl1_put_mixer(struct snd_kcontrol *kcontrol,
@@ -371,14 +404,44 @@ static int abe_get_mixer(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+/* router IDs that match our mixer strings */
+static const abe_router_t router[] = {
+		ZERO_labelID, /* strangely this is not 0 */
+		DMIC1_L_labelID, DMIC1_R_labelID,
+		DMIC2_L_labelID, DMIC2_R_labelID,
+		DMIC3_L_labelID, DMIC3_R_labelID,
+		BT_UL_L_labelID, BT_UL_R_labelID,
+		AMIC_L_labelID, AMIC_R_labelID,
+		VX_REC_L_labelID, VX_REC_R_labelID,
+};
+
 static int ul_mux_put_route(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
 	struct snd_soc_dapm_widget *widget = snd_kcontrol_chip(kcontrol);
 	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
 	int mux = ucontrol->value.enumerated.item[0];
+	int reg = e->reg - ABE_MUX_BASE, i;
 
-	// TODO: set mux via HAL
+	if (mux >= ABE_ROUTES_UL)
+		return 0;
+
+	if (reg < 8) {
+		/* 0  .. 9   = MM_UL */
+		abe->router[reg] = router[mux];
+	} else if (reg < 12) {
+		/* 10 .. 11  = MM_UL2 */
+		/* 12 .. 13  = VX_UL */
+		abe->router[reg + 2] = router[mux];
+	}
+
+	/* there is a 2 slot gap in the table, making it ABE_ROUTES_UL + 2 in size */
+	for (i = 0; i < ABE_ROUTES_UL + 2; i++)
+		dev_dbg(widget->dapm->dev, "router table [%d] = %d\n", i, abe->router[i]);
+
+	/* 2nd arg here is unused */
+	abe_set_router_configuration(UPROUTE, 0, abe->router);
+
 	abe->dapm[e->reg] = ucontrol->value.integer.value[0];
 	snd_soc_dapm_mux_update_power(widget, kcontrol, abe->dapm[e->reg], mux, e);
 	return 1;
@@ -412,6 +475,98 @@ static int abe_put_switch(struct snd_kcontrol *kcontrol,
 		snd_soc_dapm_mixer_update_power(widget, kcontrol, 0);
 	}
 	return 1;
+}
+
+
+static int volume_put_sdt_mixer(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	// TODO get ramp times from kcontrol
+	switch (mc->reg) {
+	case MIX_SDT_INPUT_UP_MIXER:
+		abe_write_mixer(MIXSDT, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->sdt_up_volume = ucontrol->value.integer.value[0];
+		return 1;
+	case MIX_SDT_INPUT_DL1_MIXER:
+		abe_write_mixer(MIXSDT, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->sdt_dl1_volume = ucontrol->value.integer.value[0];
+		return 1;
+	}
+
+	return 0;
+}
+
+static int volume_put_audul_mixer(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	// TODO get ramp times from kcontrol
+	switch (mc->reg) {
+	case MIX_AUDUL_INPUT_MM_DL:
+		abe_write_mixer(MIXAUDUL, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->audul_mm_volume = ucontrol->value.integer.value[0];
+		return 1;
+	case MIX_AUDUL_INPUT_TONES:
+		abe_write_mixer(MIXAUDUL, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->audul_tones_volume = ucontrol->value.integer.value[0];
+		return 1;
+	case MIX_AUDUL_INPUT_UPLINK:
+		abe_write_mixer(MIXAUDUL, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->audul_ul_volume = ucontrol->value.integer.value[0];
+		return 1;
+	case MIX_AUDUL_INPUT_VX_DL:
+		abe_write_mixer(MIXAUDUL, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->audul_vx_volume = ucontrol->value.integer.value[0];
+		return 1;
+
+	}
+
+	return 0;
+}
+
+static int volume_put_vxrec_mixer(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	// TODO get ramp times from kcontrol
+	switch (mc->reg) {
+	case MIX_VXREC_INPUT_MM_DL:
+		abe_write_mixer(MIXVXREC, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->vxrec_mm_volume = ucontrol->value.integer.value[0];
+		return 1;
+	case MIX_VXREC_INPUT_TONES:
+		abe_write_mixer(MIXVXREC, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->vxrec_tones_volume = ucontrol->value.integer.value[0];
+		return 1;
+	case MIX_VXREC_INPUT_VX_UL:
+		abe_write_mixer(MIXVXREC, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->vxrec_vx_ul_volume = ucontrol->value.integer.value[0];
+		return 1;
+	case MIX_VXREC_INPUT_VX_DL:
+		abe_write_mixer(MIXVXREC, -5000 + (ucontrol->value.integer.value[0] * 600),
+				RAMP_0MS, mc->reg);
+		abe->vxrec_vx_dl_volume = ucontrol->value.integer.value[0];
+		return 1;
+
+	}
+
+	return 0;
 }
 
 static int volume_put_dl1_mixer(struct snd_kcontrol *kcontrol,
@@ -527,9 +682,75 @@ static int volume_get_dl2_mixer(struct snd_kcontrol *kcontrol,
 	return 1;
 }
 
+static int volume_get_audul_mixer(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	switch (mc->reg) {
+	case MIX_AUDUL_INPUT_MM_DL:
+		ucontrol->value.integer.value[0] = abe->audul_mm_volume;
+		return 0;
+	case MIX_AUDUL_INPUT_TONES:
+		ucontrol->value.integer.value[0] = abe->audul_tones_volume;
+		return 0;
+	case MIX_AUDUL_INPUT_UPLINK:
+		ucontrol->value.integer.value[0] = abe->audul_ul_volume;
+		return 0;
+	case MIX_AUDUL_INPUT_VX_DL:
+		ucontrol->value.integer.value[0] = abe->audul_vx_volume;
+		return 0;
+	}
+
+	return 1;
+}
+
+static int volume_get_vxrec_mixer(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	switch (mc->reg) {
+	case MIX_VXREC_INPUT_MM_DL:
+		ucontrol->value.integer.value[0] = abe->vxrec_mm_volume;
+		return 0;
+	case MIX_VXREC_INPUT_TONES:
+		ucontrol->value.integer.value[0] = abe->vxrec_tones_volume;
+		return 0;
+	case MIX_VXREC_INPUT_VX_UL:
+		ucontrol->value.integer.value[0] = abe->vxrec_vx_ul_volume;
+		return 0;
+	case MIX_VXREC_INPUT_VX_DL:
+		ucontrol->value.integer.value[0] = abe->vxrec_vx_dl_volume;
+		return 0;
+	}
+
+	return 1;
+}
+
+static int volume_get_sdt_mixer(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+
+	switch (mc->reg) {
+	case MIX_SDT_INPUT_UP_MIXER:
+		ucontrol->value.integer.value[0] = abe->sdt_up_volume;
+		return 0;
+	case MIX_SDT_INPUT_DL1_MIXER:
+		ucontrol->value.integer.value[0] = abe->sdt_dl1_volume;
+		return 0;
+	}
+
+	return 1;
+}
+
 static const char *route_ul_texts[] =
 	{"None", "DMic0L", "DMic0R", "DMic1L", "DMic1R", "DMic2L", "DMic2R",
-	"BT Left", "BT Right", "AMic0", "AMic1", "VX Left", "Vx Right"};
+	"BT Left", "BT Right", "AMic0", "AMic1", "VX Left", "VX Right"};
 
 /* ROUTE_UL Mux table */
 static const struct soc_enum abe_enum[] = {
@@ -674,6 +895,11 @@ static const struct snd_kcontrol_new pdm_ul1_switch_controls =
 	SOC_SINGLE_EXT("Switch", VIRT_SWITCH, 21, 1, 0,
 			abe_get_mixer, abe_put_switch);
 
+/* Virtual DL2 -> MM_EXT Switch */
+static const struct snd_kcontrol_new mm_ext_dl2_switch_controls =
+	SOC_SINGLE_EXT("Switch", VIRT_SWITCH, 22, 1, 0,
+			abe_get_mixer, abe_put_switch);
+
 static const struct snd_kcontrol_new abe_controls[] = {
 	/* DL1 mixer gains */
 	SOC_SINGLE_EXT_TLV("DL1 Media Playback Volume",
@@ -702,6 +928,42 @@ static const struct snd_kcontrol_new abe_controls[] = {
 	SOC_SINGLE_EXT_TLV("DL2 Capture Playback Volume",
 		MIX_DL2_INPUT_MM_UL2, 0, 14, 0,
 		volume_get_dl2_mixer, volume_put_dl2_mixer, capture_dl2_tlv),
+
+	/* VXREC mixer gains */
+	SOC_SINGLE_EXT_TLV("VXREC Media Volume",
+		MIX_VXREC_INPUT_MM_DL, 0, 14, 0,
+		volume_get_vxrec_mixer, volume_put_vxrec_mixer, vxrec_mm_dl_tlv),
+	SOC_SINGLE_EXT_TLV("VXREC Tones Volume",
+		MIX_VXREC_INPUT_TONES, 0, 14, 0,
+		volume_get_vxrec_mixer, volume_put_vxrec_mixer, vxrec_tones_tlv),
+	SOC_SINGLE_EXT_TLV("VXREC Voice DL Volume",
+		MIX_VXREC_INPUT_VX_UL, 0, 14, 0,
+		volume_get_vxrec_mixer, volume_put_vxrec_mixer, vxrec_vx_dl_tlv),
+	SOC_SINGLE_EXT_TLV("VXREC Voice UL Volume",
+		MIX_VXREC_INPUT_VX_DL, 0, 14, 0,
+		volume_get_vxrec_mixer, volume_put_vxrec_mixer, vxrec_vx_ul_tlv),
+
+	/* AUDUL mixer gains */
+	SOC_SINGLE_EXT_TLV("AUDUL Media Volume",
+		MIX_AUDUL_INPUT_MM_DL, 0, 14, 0,
+		volume_get_audul_mixer, volume_put_audul_mixer, audul_mm_tlv),
+	SOC_SINGLE_EXT_TLV("AUDUL Tones Volume",
+		MIX_AUDUL_INPUT_TONES, 0, 14, 0,
+		volume_get_audul_mixer, volume_put_audul_mixer, audul_tones_tlv),
+	SOC_SINGLE_EXT_TLV("AUDUL Voice UL Volume",
+		MIX_AUDUL_INPUT_UPLINK, 0, 14, 0,
+		volume_get_audul_mixer, volume_put_audul_mixer, audul_vx_ul_tlv),
+	SOC_SINGLE_EXT_TLV("AUDUL Voice DL Volume",
+		MIX_AUDUL_INPUT_VX_DL, 0, 14, 0,
+		volume_get_audul_mixer, volume_put_audul_mixer, audul_vx_dl_tlv),
+
+	/* SDT mixer gains */
+	SOC_SINGLE_EXT_TLV("SDT UL Volume",
+		MIX_SDT_INPUT_UP_MIXER, 0, 14, 0,
+		volume_get_sdt_mixer, volume_put_sdt_mixer, sdt_ul_tlv),
+	SOC_SINGLE_EXT_TLV("SDT DL Volume",
+		MIX_SDT_INPUT_DL1_MIXER, 0, 14, 0,
+		volume_get_sdt_mixer, volume_put_sdt_mixer, sdt_dl_tlv),
 };
 
 static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
@@ -713,112 +975,144 @@ static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
 			ABE_WIDGET(1), ABE_OPP_50, 0),
 	SND_SOC_DAPM_AIF_OUT("VX_UL", "Voice Capture", 0,
 			ABE_WIDGET(2), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_OUT("MM_UL1", "MultiMedia1 Capture", 0,
+	/* the MM_UL mapping is intentional */
+	SND_SOC_DAPM_AIF_OUT("MM_UL1", "MultiMedia2 Capture", 0,
 			ABE_WIDGET(3), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_OUT("MM_UL2", "MultiMedia2 Capture", 0,
+	SND_SOC_DAPM_AIF_OUT("MM_UL2", "MultiMedia1 Capture", 0,
 			ABE_WIDGET(4), ABE_OPP_50, 0),
 	SND_SOC_DAPM_AIF_IN("MM_DL", " MultiMedia1 Playback", 0,
 			ABE_WIDGET(5), ABE_OPP_25, 0),
 	SND_SOC_DAPM_AIF_IN("VIB_DL", "Vibra Playback", 0,
 			ABE_WIDGET(6), ABE_OPP_100, 0),
+	SND_SOC_DAPM_AIF_IN("MODEM_DL", "MODEM Playback", 0,
+			ABE_WIDGET(7), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_OUT("MODEM_UL", "MODEM Capture", 0,
+			ABE_WIDGET(8), ABE_OPP_50, 0),
 
-	/* Backend DAIs  - TODO: maybe should match stream names of TWL6040 etc ?? */
+	/* Backend DAIs  */
 	// FIXME: must match BE order in abe_dai.h
 	SND_SOC_DAPM_AIF_IN("PDM_UL1", "Analog Capture", 0,
-			ABE_WIDGET(7), ABE_OPP_50, 0),
+			ABE_WIDGET(9), ABE_OPP_50, 0),
 	SND_SOC_DAPM_AIF_OUT("PDM_DL1", "HS Playback", 0,
-			ABE_WIDGET(8), ABE_OPP_25, 0),
+			ABE_WIDGET(10), ABE_OPP_25, 0),
 	SND_SOC_DAPM_AIF_OUT("PDM_DL2", "HF Playback", 0,
-			ABE_WIDGET(9), ABE_OPP_100, 0),
+			ABE_WIDGET(11), ABE_OPP_100, 0),
 	SND_SOC_DAPM_AIF_OUT("PDM_VIB", "Vibra Playback", 0,
-			ABE_WIDGET(10), ABE_OPP_100, 0),
-	SND_SOC_DAPM_AIF_IN("BT_VX_UL", "Capture", 0,
-			ABE_WIDGET(11), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_OUT("BT_VX_DL", "Playback", 0,
-			ABE_WIDGET(12), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_IN("MM_EXT_UL", "Capture", 0,
+			ABE_WIDGET(12), ABE_OPP_100, 0),
+	SND_SOC_DAPM_AIF_IN("BT_VX_UL", "BT Capture", 0,
 			ABE_WIDGET(13), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_OUT("MM_EXT_DL", "Playback", 0,
-			ABE_WIDGET(14), ABE_OPP_25, 0),
-	SND_SOC_DAPM_AIF_IN("DMIC0", "Capture", 0,
+	SND_SOC_DAPM_AIF_OUT("BT_VX_DL", "BT Playback", 0,
+			ABE_WIDGET(14), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_IN("MM_EXT_UL", "FM Capture", 0,
 			ABE_WIDGET(15), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_IN("DMIC1", "Capture", 0,
-			ABE_WIDGET(16), ABE_OPP_50, 0),
-	SND_SOC_DAPM_AIF_IN("DMIC2", "Capture", 0,
+	SND_SOC_DAPM_AIF_OUT("MM_EXT_DL", "FM Playback", 0,
+			ABE_WIDGET(16), ABE_OPP_25, 0),
+	SND_SOC_DAPM_AIF_IN("DMIC0", "DMIC0 Capture", 0,
 			ABE_WIDGET(17), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_IN("DMIC1", "DMIC1 Capture", 0,
+			ABE_WIDGET(18), ABE_OPP_50, 0),
+	SND_SOC_DAPM_AIF_IN("DMIC2", "DMIC2 Capture", 0,
+			ABE_WIDGET(19), ABE_OPP_50, 0),
 
 	/* ROUTE_UL Capture Muxes */
 	SND_SOC_DAPM_MUX("MUX_UL00",
-			ABE_WIDGET(18), ABE_OPP_50, 0, &mm_ul00_control),
+			ABE_WIDGET(20), ABE_OPP_50, 0, &mm_ul00_control),
 	SND_SOC_DAPM_MUX("MUX_UL01",
-			ABE_WIDGET(19), ABE_OPP_50, 0, &mm_ul01_control),
+			ABE_WIDGET(21), ABE_OPP_50, 0, &mm_ul01_control),
 	SND_SOC_DAPM_MUX("MUX_UL02",
-			ABE_WIDGET(20), ABE_OPP_50, 0, &mm_ul02_control),
+			ABE_WIDGET(22), ABE_OPP_50, 0, &mm_ul02_control),
 	SND_SOC_DAPM_MUX("MUX_UL03",
-			ABE_WIDGET(21), ABE_OPP_50, 0, &mm_ul03_control),
+			ABE_WIDGET(23), ABE_OPP_50, 0, &mm_ul03_control),
 	SND_SOC_DAPM_MUX("MUX_UL04",
-			ABE_WIDGET(22), ABE_OPP_50, 0, &mm_ul04_control),
+			ABE_WIDGET(24), ABE_OPP_50, 0, &mm_ul04_control),
 	SND_SOC_DAPM_MUX("MUX_UL05",
-			ABE_WIDGET(23), ABE_OPP_50, 0, &mm_ul05_control),
+			ABE_WIDGET(25), ABE_OPP_50, 0, &mm_ul05_control),
 	SND_SOC_DAPM_MUX("MUX_UL06",
-			ABE_WIDGET(24), ABE_OPP_50, 0, &mm_ul06_control),
+			ABE_WIDGET(26), ABE_OPP_50, 0, &mm_ul06_control),
 	SND_SOC_DAPM_MUX("MUX_UL07",
-			ABE_WIDGET(25), ABE_OPP_50, 0, &mm_ul07_control),
+			ABE_WIDGET(27), ABE_OPP_50, 0, &mm_ul07_control),
 	SND_SOC_DAPM_MUX("MUX_UL10",
-			ABE_WIDGET(26), ABE_OPP_50, 0, &mm_ul10_control),
+			ABE_WIDGET(28), ABE_OPP_50, 0, &mm_ul10_control),
 	SND_SOC_DAPM_MUX("MUX_UL11",
-			ABE_WIDGET(27), ABE_OPP_50, 0, &mm_ul11_control),
+			ABE_WIDGET(29), ABE_OPP_50, 0, &mm_ul11_control),
 	SND_SOC_DAPM_MUX("MUX_VX0",
-			ABE_WIDGET(28), ABE_OPP_50, 0, &mm_vx0_control),
+			ABE_WIDGET(30), ABE_OPP_50, 0, &mm_vx0_control),
 	SND_SOC_DAPM_MUX("MUX_VX1",
-			ABE_WIDGET(29), ABE_OPP_50, 0, &mm_vx1_control),
+			ABE_WIDGET(31), ABE_OPP_50, 0, &mm_vx1_control),
 
 	/* DL1 & DL2 Playback Mixers */
 	SND_SOC_DAPM_MIXER("DL1 Mixer",
-			ABE_WIDGET(30), ABE_OPP_25, 0, dl1_mixer_controls,
+			ABE_WIDGET(32), ABE_OPP_25, 0, dl1_mixer_controls,
 			ARRAY_SIZE(dl1_mixer_controls)),
 	SND_SOC_DAPM_MIXER("DL2 Mixer",
-			ABE_WIDGET(31), ABE_OPP_100, 0, dl2_mixer_controls,
+			ABE_WIDGET(33), ABE_OPP_100, 0, dl2_mixer_controls,
 			ARRAY_SIZE(dl2_mixer_controls)),
 
 	/* DL1 Mixer Input volumes ?????*/
 	SND_SOC_DAPM_PGA("DL1 Media Volume",
-			ABE_WIDGET(32), 0, 0, NULL, 0),
+			ABE_WIDGET(34), 0, 0, NULL, 0),
 
 	/* AUDIO_UL_MIXER */
 	SND_SOC_DAPM_MIXER("Voice Capture Mixer",
-			ABE_WIDGET(33), ABE_OPP_50, 0, audio_ul_mixer_controls,
+			ABE_WIDGET(35), ABE_OPP_50, 0, audio_ul_mixer_controls,
 			ARRAY_SIZE(audio_ul_mixer_controls)),
 
 	/* VX_REC_MIXER */
 	SND_SOC_DAPM_MIXER("Capture Mixer",
-			ABE_WIDGET(34), ABE_OPP_50, 0, vx_rec_mixer_controls,
+			ABE_WIDGET(36), ABE_OPP_50, 0, vx_rec_mixer_controls,
 			ARRAY_SIZE(vx_rec_mixer_controls)),
 
 	/* SDT_MIXER  - TODO: shoult this not be OPP25 ??? */
 	SND_SOC_DAPM_MIXER("Sidetone Mixer",
-			ABE_WIDGET(35), ABE_OPP_50, 0, sdt_mixer_controls,
+			ABE_WIDGET(37), ABE_OPP_50, 0, sdt_mixer_controls,
 			ARRAY_SIZE(sdt_mixer_controls)),
 
+	/*
+	 * The Following three are virtual switches to select the output port
+	 * after DL1 Gain - HAL V0.6x
+	 */
+
 	/* Virtual PDM_DL1 Switch */
-	SND_SOC_DAPM_MIXER("PDM_DL Playback",
-			ABE_WIDGET(36), ABE_OPP_25, 0, &pdm_dl1_switch_controls, 1),
+	SND_SOC_DAPM_MIXER("DL1 PDM",
+			ABE_WIDGET(38), ABE_OPP_25, 0, &pdm_dl1_switch_controls, 1),
 
 	/* Virtual BT_VX_DL Switch */
-	SND_SOC_DAPM_MIXER("BT_VX_DL Playback",
-			ABE_WIDGET(37), ABE_OPP_50, 0, &bt_vx_dl_switch_controls, 1),
+	SND_SOC_DAPM_MIXER("DL1 BT_VX",
+			ABE_WIDGET(39), ABE_OPP_50, 0, &bt_vx_dl_switch_controls, 1),
 
 	/* Virtual MM_EXT_DL Switch TODO: confrm OPP level here */
-	SND_SOC_DAPM_MIXER("MM_EXT_DL Playback",
-			ABE_WIDGET(38), ABE_OPP_50, 0, &mm_ext_dl_switch_controls, 1),
+	SND_SOC_DAPM_MIXER("DL1 MM_EXT",
+			ABE_WIDGET(40), ABE_OPP_50, 0, &mm_ext_dl_switch_controls, 1),
+
+	/*
+	 * The Following three are virtual switches to select the input port
+	 * before AMIC_UL enters ROUTE_UL - HAL V0.6x
+	 */
 
 	/* Virtual MM_EXT_UL Switch */
-	SND_SOC_DAPM_MIXER("MM_EXT_UL Capture",
-			ABE_WIDGET(39), ABE_OPP_50, 0, &mm_ext_ul_switch_controls, 1),
+	SND_SOC_DAPM_MIXER("AMIC_UL MM_EXT",
+			ABE_WIDGET(41), ABE_OPP_50, 0, &mm_ext_ul_switch_controls, 1),
 
 	/* Virtual PDM_UL1 Switch */
-	SND_SOC_DAPM_MIXER("PDM_UL Capture",
-			ABE_WIDGET(40), ABE_OPP_50, 0, &pdm_ul1_switch_controls, 1),
+	SND_SOC_DAPM_MIXER("AMIC_UL PDM",
+			ABE_WIDGET(42), ABE_OPP_50, 0, &pdm_ul1_switch_controls, 1),
+
+	/* Virtual DL2 -> MM_EXT Switch */
+	SND_SOC_DAPM_MIXER("MM_EXT DL2",
+			ABE_WIDGET(43), ABE_OPP_50, 0, &mm_ext_dl2_switch_controls, 1),
+
+	/* Virtual to join MM_EXT and PDM+UL1 switches */
+	SND_SOC_DAPM_MIXER("AMIC_UL", SND_SOC_NOPM, 0, 0, NULL, 0),
+
+	/* Virtuals to join our capture sources */
+	SND_SOC_DAPM_MIXER("Sidetone Capture VMixer", SND_SOC_NOPM, 0, 0, NULL, 0),
+	SND_SOC_DAPM_MIXER("Voice Capture VMixer", SND_SOC_NOPM, 0, 0, NULL, 0),
+	SND_SOC_DAPM_MIXER("DL1 Capture VMixer", SND_SOC_NOPM, 0, 0, NULL, 0),
+	SND_SOC_DAPM_MIXER("DL2 Capture VMixer", SND_SOC_NOPM, 0, 0, NULL, 0),
+
+	/* Virtual MODEM and VX_UL mixer */
+	SND_SOC_DAPM_MIXER("VX UL VMixer", SND_SOC_NOPM, 0, 0, NULL, 0),
+	SND_SOC_DAPM_MIXER("VX DL VMixer", SND_SOC_NOPM, 0, 0, NULL, 0),
 
 	/* Virtual Pins to force backends ON atm */
 	SND_SOC_DAPM_OUTPUT("BE_OUT"),
@@ -827,298 +1121,247 @@ static const struct snd_soc_dapm_widget abe_dapm_widgets[] = {
 
 static const struct snd_soc_dapm_route intercon[] = {
 
-	/* MUX_UL00 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL00"},
-	{"MM_UL1", "DMic0R", "MUX_UL00"},
-	{"MM_UL1", "DMic1L", "MUX_UL00"},
-	{"MM_UL1", "DMic1R", "MUX_UL00"},
-	{"MM_UL1", "DMic2L", "MUX_UL00"},
-	{"MM_UL1", "DMic2R", "MUX_UL00"},
-	{"MM_UL1", "BT Left", "MUX_UL00"},
-	{"MM_UL1", "BT Right", "MUX_UL00"},
-	{"MM_UL1", "AMic0", "MUX_UL00"},
-	{"MM_UL1", "AMic1", "MUX_UL00"},
-	{"MM_UL1", "VX Left", "MUX_UL00"},
-	{"MM_UL1", "VX Right", "MUX_UL00"},
+	/* MUX_UL00 - ROUTE_UL - Chan 0  */
+	{"MUX_UL00", "DMic0L", "DMIC0"},
+	{"MUX_UL00", "DMic0R", "DMIC0"},
+	{"MUX_UL00", "DMic1L", "DMIC1"},
+	{"MUX_UL00", "DMic1R", "DMIC1"},
+	{"MUX_UL00", "DMic2L", "DMIC2"},
+	{"MUX_UL00", "DMic2R", "DMIC2"},
+	{"MUX_UL00", "BT Left", "VX UL VMixer"},
+	{"MUX_UL00", "BT Right", "VX UL VMixer"},
+	{"MUX_UL00", "AMic0", "AMIC_UL"},
+	{"MUX_UL00", "AMic1", "AMIC_UL"},
+	{"MUX_UL00", "VX Left", "Capture Mixer"},
+	{"MUX_UL00", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL00"},
 
-	/* MUX_UL01 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL01"},
-	{"MM_UL1", "DMic0R", "MUX_UL01"},
-	{"MM_UL1", "DMic1L", "MUX_UL01"},
-	{"MM_UL1", "DMic1R", "MUX_UL01"},
-	{"MM_UL1", "DMic2L", "MUX_UL01"},
-	{"MM_UL1", "DMic2R", "MUX_UL01"},
-	{"MM_UL1", "BT Left", "MUX_UL01"},
-	{"MM_UL1", "BT Right", "MUX_UL01"},
-	{"MM_UL1", "AMic0", "MUX_UL01"},
-	{"MM_UL1", "AMic1", "MUX_UL01"},
-	{"MM_UL1", "VX Left", "MUX_UL01"},
-	{"MM_UL1", "VX Right", "MUX_UL01"},
+	/* MUX_UL01 - ROUTE_UL - Chan 1  */
+	{"MUX_UL01", "DMic0L", "DMIC0"},
+	{"MUX_UL01", "DMic0R", "DMIC0"},
+	{"MUX_UL01", "DMic1L", "DMIC1"},
+	{"MUX_UL01", "DMic1R", "DMIC1"},
+	{"MUX_UL01", "DMic2L", "DMIC2"},
+	{"MUX_UL01", "DMic2R", "DMIC2"},
+	{"MUX_UL01", "BT Left", "VX UL VMixer"},
+	{"MUX_UL01", "BT Right", "VX UL VMixer"},
+	{"MUX_UL01", "AMic0", "AMIC_UL"},
+	{"MUX_UL01", "AMic1", "AMIC_UL"},
+	{"MUX_UL01", "VX Left", "Capture Mixer"},
+	{"MUX_UL01", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL01"},
 
-	/* MUX_UL02 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL02"},
-	{"MM_UL1", "DMic0R", "MUX_UL02"},
-	{"MM_UL1", "DMic1L", "MUX_UL02"},
-	{"MM_UL1", "DMic1R", "MUX_UL02"},
-	{"MM_UL1", "DMic2L", "MUX_UL02"},
-	{"MM_UL1", "DMic2R", "MUX_UL02"},
-	{"MM_UL1", "BT Left", "MUX_UL02"},
-	{"MM_UL1", "BT Right", "MUX_UL02"},
-	{"MM_UL1", "AMic0", "MUX_UL02"},
-	{"MM_UL1", "AMic1", "MUX_UL02"},
-	{"MM_UL1", "VX Left", "MUX_UL02"},
-	{"MM_UL1", "VX Right", "MUX_UL02"},
+	/* MUX_UL02 - ROUTE_UL - Chan 2  */
+	{"MUX_UL02", "DMic0L", "DMIC0"},
+	{"MUX_UL02", "DMic0R", "DMIC0"},
+	{"MUX_UL02", "DMic1L", "DMIC1"},
+	{"MUX_UL02", "DMic1R", "DMIC1"},
+	{"MUX_UL02", "DMic2L", "DMIC2"},
+	{"MUX_UL02", "DMic2R", "DMIC2"},
+	{"MUX_UL02", "BT Left", "VX UL VMixer"},
+	{"MUX_UL02", "BT Right", "VX UL VMixer"},
+	{"MUX_UL02", "AMic0", "AMIC_UL"},
+	{"MUX_UL02", "AMic1", "AMIC_UL"},
+	{"MUX_UL02", "VX Left", "Capture Mixer"},
+	{"MUX_UL02", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL02"},
 
-	/* MUX_UL03 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL03"},
-	{"MM_UL1", "DMic0R", "MUX_UL03"},
-	{"MM_UL1", "DMic1L", "MUX_UL03"},
-	{"MM_UL1", "DMic1R", "MUX_UL03"},
-	{"MM_UL1", "DMic2L", "MUX_UL03"},
-	{"MM_UL1", "DMic2R", "MUX_UL03"},
-	{"MM_UL1", "BT Left", "MUX_UL03"},
-	{"MM_UL1", "BT Right", "MUX_UL03"},
-	{"MM_UL1", "AMic0", "MUX_UL03"},
-	{"MM_UL1", "AMic1", "MUX_UL03"},
-	{"MM_UL1", "VX Left", "MUX_UL03"},
-	{"MM_UL1", "VX Right", "MUX_UL03"},
+	/* MUX_UL03 - ROUTE_UL - Chan 3  */
+	{"MUX_UL03", "DMic0L", "DMIC0"},
+	{"MUX_UL03", "DMic0R", "DMIC0"},
+	{"MUX_UL03", "DMic1L", "DMIC1"},
+	{"MUX_UL03", "DMic1R", "DMIC1"},
+	{"MUX_UL03", "DMic2L", "DMIC2"},
+	{"MUX_UL03", "DMic2R", "DMIC2"},
+	{"MUX_UL03", "BT Left", "VX UL VMixer"},
+	{"MUX_UL03", "BT Right", "VX UL VMixer"},
+	{"MUX_UL03", "AMic0", "AMIC_UL"},
+	{"MUX_UL03", "AMic1", "AMIC_UL"},
+	{"MUX_UL03", "VX Left", "Capture Mixer"},
+	{"MUX_UL03", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL03"},
 
-	/* MUX_UL04 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL04"},
-	{"MM_UL1", "DMic0R", "MUX_UL04"},
-	{"MM_UL1", "DMic1L", "MUX_UL04"},
-	{"MM_UL1", "DMic1R", "MUX_UL04"},
-	{"MM_UL1", "DMic2L", "MUX_UL04"},
-	{"MM_UL1", "DMic2R", "MUX_UL04"},
-	{"MM_UL1", "BT Left", "MUX_UL04"},
-	{"MM_UL1", "BT Right", "MUX_UL04"},
-	{"MM_UL1", "AMic0", "MUX_UL04"},
-	{"MM_UL1", "AMic1", "MUX_UL04"},
-	{"MM_UL1", "VX Left", "MUX_UL04"},
-	{"MM_UL1", "VX Right", "MUX_UL04"},
+	/* MUX_UL04 - ROUTE_UL - Chan 4  */
+	{"MUX_UL04", "DMic0L", "DMIC0"},
+	{"MUX_UL04", "DMic0R", "DMIC0"},
+	{"MUX_UL04", "DMic1L", "DMIC1"},
+	{"MUX_UL04", "DMic1R", "DMIC1"},
+	{"MUX_UL04", "DMic2L", "DMIC2"},
+	{"MUX_UL04", "DMic2R", "DMIC2"},
+	{"MUX_UL04", "BT Left", "VX UL VMixer"},
+	{"MUX_UL04", "BT Right", "VX UL VMixer"},
+	{"MUX_UL04", "AMic0", "AMIC_UL"},
+	{"MUX_UL04", "AMic1", "AMIC_UL"},
+	{"MUX_UL04", "VX Left", "Capture Mixer"},
+	{"MUX_UL04", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL04"},
 
-	/* MUX_UL05 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL05"},
-	{"MM_UL1", "DMic0R", "MUX_UL05"},
-	{"MM_UL1", "DMic1L", "MUX_UL05"},
-	{"MM_UL1", "DMic1R", "MUX_UL05"},
-	{"MM_UL1", "DMic2L", "MUX_UL05"},
-	{"MM_UL1", "DMic2R", "MUX_UL05"},
-	{"MM_UL1", "BT Left", "MUX_UL05"},
-	{"MM_UL1", "BT Right", "MUX_UL05"},
-	{"MM_UL1", "AMic0", "MUX_UL05"},
-	{"MM_UL1", "AMic1", "MUX_UL05"},
-	{"MM_UL1", "VX Left", "MUX_UL05"},
-	{"MM_UL1", "VX Right", "MUX_UL05"},
+	/* MUX_UL05 - ROUTE_UL - Chan 5  */
+	{"MUX_UL05", "DMic0L", "DMIC0"},
+	{"MUX_UL05", "DMic0R", "DMIC0"},
+	{"MUX_UL05", "DMic1L", "DMIC1"},
+	{"MUX_UL05", "DMic1R", "DMIC1"},
+	{"MUX_UL05", "DMic2L", "DMIC2"},
+	{"MUX_UL05", "DMic2R", "DMIC2"},
+	{"MUX_UL05", "BT Left", "VX UL VMixer"},
+	{"MUX_UL05", "BT Right", "VX UL VMixer"},
+	{"MUX_UL05", "AMic0", "AMIC_UL"},
+	{"MUX_UL05", "AMic1", "AMIC_UL"},
+	{"MUX_UL05", "VX Left", "Capture Mixer"},
+	{"MUX_UL05", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL05"},
 
-	/* MUX_UL06 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL06"},
-	{"MM_UL1", "DMic0R", "MUX_UL06"},
-	{"MM_UL1", "DMic1L", "MUX_UL06"},
-	{"MM_UL1", "DMic1R", "MUX_UL06"},
-	{"MM_UL1", "DMic2L", "MUX_UL06"},
-	{"MM_UL1", "DMic2R", "MUX_UL06"},
-	{"MM_UL1", "BT Left", "MUX_UL06"},
-	{"MM_UL1", "BT Right", "MUX_UL06"},
-	{"MM_UL1", "AMic0", "MUX_UL06"},
-	{"MM_UL1", "AMic1", "MUX_UL06"},
-	{"MM_UL1", "VX Left", "MUX_UL06"},
-	{"MM_UL1", "VX Right", "MUX_UL06"},
+	/* MUX_UL06 - ROUTE_UL - Chan 6  */
+	{"MUX_UL06", "DMic0L", "DMIC0"},
+	{"MUX_UL06", "DMic0R", "DMIC0"},
+	{"MUX_UL06", "DMic1L", "DMIC1"},
+	{"MUX_UL06", "DMic1R", "DMIC1"},
+	{"MUX_UL06", "DMic2L", "DMIC2"},
+	{"MUX_UL06", "DMic2R", "DMIC2"},
+	{"MUX_UL06", "BT Left", "VX UL VMixer"},
+	{"MUX_UL06", "BT Right", "VX UL VMixer"},
+	{"MUX_UL06", "AMic0", "AMIC_UL"},
+	{"MUX_UL06", "AMic1", "AMIC_UL"},
+	{"MUX_UL06", "VX Left", "Capture Mixer"},
+	{"MUX_UL06", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL06"},
 
-	/* MUX_UL07 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL07"},
-	{"MM_UL1", "DMic0R", "MUX_UL07"},
-	{"MM_UL1", "DMic1L", "MUX_UL07"},
-	{"MM_UL1", "DMic1R", "MUX_UL07"},
-	{"MM_UL1", "DMic2L", "MUX_UL07"},
-	{"MM_UL1", "DMic2R", "MUX_UL07"},
-	{"MM_UL1", "BT Left", "MUX_UL07"},
-	{"MM_UL1", "BT Right", "MUX_UL07"},
-	{"MM_UL1", "AMic0", "MUX_UL07"},
-	{"MM_UL1", "AMic1", "MUX_UL07"},
-	{"MM_UL1", "VX Left", "MUX_UL07"},
-	{"MM_UL1", "VX Right", "MUX_UL07"},
+	/* MUX_UL07 - ROUTE_UL - Chan 7  */
+	{"MUX_UL07", "DMic0L", "DMIC0"},
+	{"MUX_UL07", "DMic0R", "DMIC0"},
+	{"MUX_UL07", "DMic1L", "DMIC1"},
+	{"MUX_UL07", "DMic1R", "DMIC1"},
+	{"MUX_UL07", "DMic2L", "DMIC2"},
+	{"MUX_UL07", "DMic2R", "DMIC2"},
+	{"MUX_UL07", "BT Left", "VX UL VMixer"},
+	{"MUX_UL07", "BT Right", "VX UL VMixer"},
+	{"MUX_UL07", "AMic0", "AMIC_UL"},
+	{"MUX_UL07", "AMic1", "AMIC_UL"},
+	{"MUX_UL07", "VX Left", "Capture Mixer"},
+	{"MUX_UL07", "VX Right", "Capture Mixer"},
+	{"MM_UL1", NULL, "MUX_UL07"},
 
-	/* MUX_UL10 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL10"},
-	{"MM_UL1", "DMic0R", "MUX_UL10"},
-	{"MM_UL1", "DMic1L", "MUX_UL10"},
-	{"MM_UL1", "DMic1R", "MUX_UL10"},
-	{"MM_UL1", "DMic2L", "MUX_UL10"},
-	{"MM_UL1", "DMic2R", "MUX_UL10"},
-	{"MM_UL1", "BT Left", "MUX_UL10"},
-	{"MM_UL1", "BT Right", "MUX_UL10"},
-	{"MM_UL1", "AMic0", "MUX_UL10"},
-	{"MM_UL1", "AMic1", "MUX_UL10"},
-	{"MM_UL1", "VX Left", "MUX_UL10"},
-	{"MM_UL1", "VX Right", "MUX_UL10"},
+	/* MUX_UL10 - ROUTE_UL - Chan 10  */
+	{"MUX_UL10", "DMic0L", "DMIC0"},
+	{"MUX_UL10", "DMic0R", "DMIC0"},
+	{"MUX_UL10", "DMic1L", "DMIC1"},
+	{"MUX_UL10", "DMic1R", "DMIC1"},
+	{"MUX_UL10", "DMic2L", "DMIC2"},
+	{"MUX_UL10", "DMic2R", "DMIC2"},
+	{"MUX_UL10", "BT Left", "VX UL VMixer"},
+	{"MUX_UL10", "BT Right", "VX UL VMixer"},
+	{"MUX_UL10", "AMic0", "AMIC_UL"},
+	{"MUX_UL10", "AMic1", "AMIC_UL"},
+	{"MUX_UL10", "VX Left", "Capture Mixer"},
+	{"MUX_UL10", "VX Right", "Capture Mixer"},
+	{"MM_UL2", NULL, "MUX_UL10"},
 
-	/* MUX_UL11 - ROUTE_UL */
-	{"MM_UL1", "DMic0L", "MUX_UL11"},
-	{"MM_UL1", "DMic0R", "MUX_UL11"},
-	{"MM_UL1", "DMic1L", "MUX_UL11"},
-	{"MM_UL1", "DMic1R", "MUX_UL11"},
-	{"MM_UL1", "DMic2L", "MUX_UL11"},
-	{"MM_UL1", "DMic2R", "MUX_UL11"},
-	{"MM_UL1", "BT Left", "MUX_UL11"},
-	{"MM_UL1", "BT Right", "MUX_UL11"},
-	{"MM_UL1", "AMic0", "MUX_UL11"},
-	{"MM_UL1", "AMic1", "MUX_UL11"},
-	{"MM_UL1", "VX Left", "MUX_UL11"},
-	{"MM_UL1", "VX Right", "MUX_UL11"},
+	/* MUX_UL11 - ROUTE_UL - Chan 11  */
+	{"MUX_UL11", "DMic0L", "DMIC0"},
+	{"MUX_UL11", "DMic0R", "DMIC0"},
+	{"MUX_UL11", "DMic1L", "DMIC1"},
+	{"MUX_UL11", "DMic1R", "DMIC1"},
+	{"MUX_UL11", "DMic2L", "DMIC2"},
+	{"MUX_UL11", "DMic2R", "DMIC2"},
+	{"MUX_UL11", "BT Left", "VX UL VMixer"},
+	{"MUX_UL11", "BT Right", "VX UL VMixer"},
+	{"MUX_UL11", "AMic0", "AMIC_UL"},
+	{"MUX_UL11", "AMic1", "AMIC_UL"},
+	{"MUX_UL11", "VX Left", "Capture Mixer"},
+	{"MUX_UL11", "VX Right", "Capture Mixer"},
+	{"MM_UL2", NULL, "MUX_UL11"},
 
-	/* MUX_VX0 - ROUTE_UL */
-	{"VX_UL", "DMic0L", "MUX_VX0"},
-	{"VX_UL", "DMic0R", "MUX_VX0"},
-	{"VX_UL", "DMic1L", "MUX_VX0"},
-	{"VX_UL", "DMic1R", "MUX_VX0"},
-	{"VX_UL", "DMic2L", "MUX_VX0"},
-	{"VX_UL", "DMic2R", "MUX_VX0"},
-	{"VX_UL", "BT Left", "MUX_VX0"},
-	{"VX_UL", "BT Right", "MUX_VX0"},
-	{"VX_UL", "AMic0", "MUX_VX0"},
-	{"VX_UL", "AMic1", "MUX_VX0"},
-	{"VX_UL", "VX Left", "MUX_VX0"},
-	{"VX_UL", "VX Right", "MUX_VX0"},
+	/* MUX_VX0 - ROUTE_UL - Chan 20  */
+	{"MUX_VX0", "DMic0L", "DMIC0"},
+	{"MUX_VX0", "DMic0R", "DMIC0"},
+	{"MUX_VX0", "DMic1L", "DMIC1"},
+	{"MUX_VX0", "DMic1R", "DMIC1"},
+	{"MUX_VX0", "DMic2L", "DMIC2"},
+	{"MUX_VX0", "DMic2R", "DMIC2"},
+	{"MUX_VX0", "BT Left", "VX UL VMixer"},
+	{"MUX_VX0", "BT Right", "VX UL VMixer"},
+	{"MUX_VX0", "AMic0", "AMIC_UL"},
+	{"MUX_VX0", "AMic1", "AMIC_UL"},
+	{"MUX_VX0", "VX Left", "Capture Mixer"},
+	{"MUX_VX0", "VX Right", "Capture Mixer"},
 
-	/* MUX_VX1 - ROUTE_UL */
-	{"VX_UL", "DMic0L", "MUX_VX1"},
-	{"VX_UL", "DMic0R", "MUX_VX1"},
-	{"VX_UL", "DMic1L", "MUX_VX1"},
-	{"VX_UL", "DMic1R", "MUX_VX1"},
-	{"VX_UL", "DMic2L", "MUX_VX1"},
-	{"VX_UL", "DMic2R", "MUX_VX1"},
-	{"VX_UL", "BT Left", "MUX_VX1"},
-	{"VX_UL", "BT Right", "MUX_VX1"},
-	{"VX_UL", "AMic0", "MUX_VX1"},
-	{"VX_UL", "AMic1", "MUX_VX1"},
-	{"VX_UL", "VX Left", "MUX_VX1"},
-	{"VX_UL", "VX Right", "MUX_VX1"},
+	/* MUX_VX1 - ROUTE_UL - Chan 20  */
+	{"MUX_VX1", "DMic0L", "DMIC0"},
+	{"MUX_VX1", "DMic0R", "DMIC0"},
+	{"MUX_VX1", "DMic1L", "DMIC1"},
+	{"MUX_VX1", "DMic1R", "DMIC1"},
+	{"MUX_VX1", "DMic2L", "DMIC2"},
+	{"MUX_VX1", "DMic2R", "DMIC2"},
+	{"MUX_VX1", "BT Left", "VX UL VMixer"},
+	{"MUX_VX1", "BT Right", "VX UL VMixer"},
+	{"MUX_VX1", "AMic0", "AMIC_UL"},
+	{"MUX_VX1", "AMic1", "AMIC_UL"},
+	{"MUX_VX1", "VX Left", "Capture Mixer"},
+	{"MUX_VX1", "VX Right", "Capture Mixer"},
 
-	/* AMIC_UL */
-	{"MM_EXT_UL Capture", "Switch", "MM_EXT_UL"},
-	{"MUX_UL00", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL01", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL02", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL03", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL04", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL05", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL06", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL07", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL10", NULL, "MM_EXT_UL Capture"},
-	{"MUX_UL11", NULL, "MM_EXT_UL Capture"},
-	{"MUX_VX0", NULL, "MM_EXT_UL Capture"},
-	{"MUX_VX1", NULL, "MM_EXT_UL Capture"},
-
-	/* BT_VX_UL */
-	{"MUX_UL00", NULL, "BT_VX_UL"},
-	{"MUX_UL01", NULL, "BT_VX_UL"},
-	{"MUX_UL02", NULL, "BT_VX_UL"},
-	{"MUX_UL03", NULL, "BT_VX_UL"},
-	{"MUX_UL04", NULL, "BT_VX_UL"},
-	{"MUX_UL05", NULL, "BT_VX_UL"},
-	{"MUX_UL06", NULL, "BT_VX_UL"},
-	{"MUX_UL07", NULL, "BT_VX_UL"},
-	{"MUX_UL10", NULL, "BT_VX_UL"},
-	{"MUX_UL11", NULL, "BT_VX_UL"},
-	{"MUX_VX0", NULL, "BT_VX_UL"},
-	{"MUX_VX1", NULL, "BT_VX_UL"},
-
-	/* DMIC0 */
-	{"MUX_UL00", NULL, "DMIC0"},
-	{"MUX_UL01", NULL, "DMIC0"},
-	{"MUX_UL02", NULL, "DMIC0"},
-	{"MUX_UL03", NULL, "DMIC0"},
-	{"MUX_UL04", NULL, "DMIC0"},
-	{"MUX_UL05", NULL, "DMIC0"},
-	{"MUX_UL06", NULL, "DMIC0"},
-	{"MUX_UL07", NULL, "DMIC0"},
-	{"MUX_UL10", NULL, "DMIC0"},
-	{"MUX_UL11", NULL, "DMIC0"},
-	{"MUX_VX0", NULL, "DMIC0"},
-	{"MUX_VX1", NULL, "DMIC0"},
-
-	/* DMIC1 */
-	{"MUX_UL00", NULL, "DMIC1"},
-	{"MUX_UL01", NULL, "DMIC1"},
-	{"MUX_UL02", NULL, "DMIC1"},
-	{"MUX_UL03", NULL, "DMIC1"},
-	{"MUX_UL04", NULL, "DMIC1"},
-	{"MUX_UL05", NULL, "DMIC1"},
-	{"MUX_UL06", NULL, "DMIC1"},
-	{"MUX_UL07", NULL, "DMIC1"},
-	{"MUX_UL10", NULL, "DMIC1"},
-	{"MUX_UL11", NULL, "DMIC1"},
-	{"MUX_VX0", NULL, "DMIC1"},
-	{"MUX_VX1", NULL, "DMIC1"},
-
-	/* DMIC2 */
-	{"MUX_UL00", NULL, "DMIC2"},
-	{"MUX_UL01", NULL, "DMIC2"},
-	{"MUX_UL02", NULL, "DMIC2"},
-	{"MUX_UL03", NULL, "DMIC2"},
-	{"MUX_UL04", NULL, "DMIC2"},
-	{"MUX_UL05", NULL, "DMIC2"},
-	{"MUX_UL06", NULL, "DMIC2"},
-	{"MUX_UL07", NULL, "DMIC2"},
-	{"MUX_UL10", NULL, "DMIC2"},
-	{"MUX_UL11", NULL, "DMIC2"},
-	{"MUX_VX0", NULL, "DMIC2"},
-	{"MUX_VX1", NULL, "DMIC2"},
+	/* Capture Input Selection  for AMIC_UL  */
+	{"AMIC_UL MM_EXT", "Switch", "MM_EXT_UL"},
+	{"AMIC_UL PDM", "Switch", "PDM_UL1"},
+	{"AMIC_UL", NULL, "AMIC_UL MM_EXT"},
+	{"AMIC_UL", NULL, "AMIC_UL PDM"},
 
 	/* Headset (DL1)  playback path */
 	{"DL1 Mixer", "Tones", "TONES_DL"},
-	{"DL1 Mixer", "Voice", "VX_DL"},
-	{"DL1 Mixer", "Capture", "MUX_UL10"},
+	{"DL1 Mixer", "Voice", "VX DL VMixer"},
+	{"DL1 Mixer", "Capture", "DL1 Capture VMixer"},
+	{"DL1 Capture VMixer", NULL, "MUX_UL10"},
+	{"DL1 Capture VMixer", NULL, "MUX_UL11"},
 	{"DL1 Mixer", "Multimedia", "MM_DL"},
 
 	/* Sidetone Mixer */
 	{"Sidetone Mixer", "Playback", "DL1 Mixer"},
-	{"Sidetone Mixer", "Capture", "MUX_VX0"},
+	{"Sidetone Mixer", "Capture", "Sidetone Capture VMixer"},
+	{"Sidetone Capture VMixer", NULL, "MUX_VX0"},
+	{"Sidetone Capture VMixer", NULL, "MUX_VX1"},
 
-	{"BT_VX_DL Playback", "Switch", "Sidetone Mixer"},
-	{"MM_EXT_DL Playback", "Switch", "Sidetone Mixer"},
-	{"PDM_DL Playback", "Switch", "Sidetone Mixer"},
-
-	{"PDM_DL1", NULL, "PDM_DL Playback"},
-	{"BT_VX_DL", NULL, "BT_VX_DL Playback"},
-	{"MM_EXT_DL", NULL, "MM_EXT_DL Playback"},
+	/* Playback Output selection after DL1 Gain */
+	{"DL1 BT_VX", "Switch", "Sidetone Mixer"},
+	{"DL1 MM_EXT", "Switch", "Sidetone Mixer"},
+	{"DL1 PDM", "Switch", "Sidetone Mixer"},
+	{"PDM_DL1", NULL, "DL1 PDM"},
+	{"BT_VX_DL", NULL, "DL1 BT_VX"},
+	{"MM_EXT_DL", NULL, "DL1 MM_EXT"},
 
 	/* Handsfree (DL2) playback path */
 	{"DL2 Mixer", "Tones", "TONES_DL"},
-	{"DL2 Mixer", "Voice", "VX_DL"},
-	{"DL2 Mixer", "Capture", "MUX_UL10"},
+	{"DL2 Mixer", "Voice", "VX DL VMixer"},
+	{"DL2 Mixer", "Capture", "DL2 Capture VMixer"},
+	{"DL2 Capture VMixer", NULL, "MUX_UL10"},
+	{"DL2 Capture VMixer", NULL, "MUX_UL11"},
 	{"DL2 Mixer", "Multimedia", "MM_DL"},
-
 	{"PDM_DL2", NULL, "DL2 Mixer"},
+
+	/* DL2 -> MM_EXT_DL */
+	{"MM_EXT DL2", NULL, "DL2 Mixer"},
+	{"MM_EXT_DL", "Switch", "MM_EXT DL2"},
 
 	/* VxREC Mixer */
 	{"Capture Mixer", "Tones", "TONES_DL"},
-	{"Capture Mixer", "Voice Playback", "VX_DL"},
-	{"Capture Mixer", "Voice Capture", "VX_UL"},
+	{"Capture Mixer", "Voice Playback", "VX DL VMixer"},
+	{"Capture Mixer", "Voice Capture", "VX UL VMixer"},
 	{"Capture Mixer", "Media Playback", "MM_DL"},
-	{"MUX_UL00", NULL, "Capture Mixer"},
-	{"MUX_UL01", NULL, "Capture Mixer"},
-	{"MUX_UL02", NULL, "Capture Mixer"},
-	{"MUX_UL03", NULL, "Capture Mixer"},
-	{"MUX_UL04", NULL, "Capture Mixer"},
-	{"MUX_UL05", NULL, "Capture Mixer"},
-	{"MUX_UL06", NULL, "Capture Mixer"},
-	{"MUX_UL07", NULL, "Capture Mixer"},
-	{"MUX_UL10", NULL, "Capture Mixer"},
-	{"MUX_UL11", NULL, "Capture Mixer"},
-	{"MUX_VX0", NULL, "Capture Mixer"},
-	{"MUX_VX1", NULL, "Capture Mixer"},
 
 	/* Audio UL mixer */
 	{"Voice Capture Mixer", "Tones Playback", "TONES_DL"},
 	{"Voice Capture Mixer", "Media Playback", "MM_DL"},
-	{"Voice Capture Mixer", "Capture", "MUX_VX0"},
-
-	{"VX_UL", NULL, "Voice Capture Mixer"},
+	{"Voice Capture Mixer", "Capture", "Voice Capture VMixer"},
+	{"Voice Capture VMixer", NULL, "MUX_VX0"},
+	{"Voice Capture VMixer", NULL, "MUX_VX1"},
+	{"VX UL VMixer", NULL, "Voice Capture Mixer"},
 
 	/* Vibra */
 	{"PDM_VIB", NULL, "VIB_DL"},
+
+	/* VX and MODEM */
+	{"VX_UL", NULL, "VX UL VMixer"},
+	{"MODEM_UL", NULL, "VX UL VMixer"},
+	{"VX DL VMixer", NULL, "VX_DL"},
+	{"VX DL VMixer", NULL, "MODEM_DL"},
 
 	/* Backend Enablement - TODO: maybe re-work*/
 	{"BE_OUT", NULL, "PDM_DL1"},
@@ -1170,6 +1413,9 @@ static int aess_open(struct snd_pcm_substream *substream)
 	mutex_lock(&abe->mutex);
 
 	abe->fe_id = dai->id;
+	dev_dbg(&rtd->dev, "%s ID %d\n", __func__, dai->id);
+
+//	snd_soc_set_runtime_hwparams(substream, &omap_abe_hardware);
 
 	switch (dai->id) {
 	case ABE_FRONTEND_DAI_MEDIA:
@@ -1202,22 +1448,60 @@ static int aess_open(struct snd_pcm_substream *substream)
 			snd_soc_dapm_stream_event(rtd, "Vibra Playback",
 					SND_SOC_DAPM_STREAM_START);
 		break;
+	case ABE_FRONTEND_DAI_MODEM:
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			snd_soc_dapm_stream_event(rtd, "MODEM Playback",
+					SND_SOC_DAPM_STREAM_START);
+		else
+			snd_soc_dapm_stream_event(rtd, "MODEM Capture",
+					SND_SOC_DAPM_STREAM_START);
+		break;
 	}
 
 	mutex_unlock(&abe->mutex);
 	return 0;
 }
 
+static int aess_hw_params(struct snd_pcm_substream *substream,
+	struct snd_pcm_hw_params *params)
+{
+//	struct snd_pcm_runtime *runtime = substream->runtime;
+
+//	snd_pcm_set_runtime_buffer(substream, &substream->dma_buffer);
+//	runtime->dma_bytes = params_buffer_bytes(params);
+	return 0;
+}
+
 static int aess_prepare(struct snd_pcm_substream *substream)
 {
+	struct snd_soc_pcm_runtime  *rtd = substream->private_data;
 	int i, opp = 0;
 
 	mutex_lock(&abe->mutex);
 
+	dev_dbg(&rtd->dev, "%s ID %d\n", __func__, rtd->cpu_dai->id);
+
 	/* now calculate OPP level based upon DAPM widget status */
-	for (i = ABE_WIDGET_START; i < ABE_WIDGET_END; i++)
+	for (i = ABE_WIDGET_START; i < ABE_WIDGET_END; i++) {
+	//	dev_dbg(&rtd->dev, "opp w %d val 0x%x\n", i, abe->dapm[i]);
 		opp |= abe->dapm[i];
-	printk("OPP level at start is %d\n", (1 << (fls(opp) - 1)) * 25);
+	}
+
+	opp = (1 << (fls(opp) - 1)) * 25;
+	dev_dbg(&rtd->dev, "OPP level at prepare is %d\n", opp);
+
+	switch (opp) {
+	case 25:
+		//abe_set_opp_processing(ABE_OPP25);
+		break;
+	case 50:
+		//abe_set_opp_processing(ABE_OPP50);
+		break;
+	case 100:
+	default:
+		abe_set_opp_processing(ABE_OPP100);
+		break;
+	}
 
 	mutex_unlock(&abe->mutex);
 	return 0;
@@ -1232,6 +1516,7 @@ static int aess_close(struct snd_pcm_substream *substream)
 	mutex_lock(&abe->mutex);
 
 	abe->fe_id = dai->id;
+	dev_dbg(&rtd->dev, "%s ID %d\n", __func__, dai->id);
 
 	switch (dai->id) {
 	case ABE_FRONTEND_DAI_MEDIA:
@@ -1264,53 +1549,144 @@ static int aess_close(struct snd_pcm_substream *substream)
 			snd_soc_dapm_stream_event(rtd, "Vibra Playback",
 					SND_SOC_DAPM_STREAM_STOP);
 		break;
+	case ABE_FRONTEND_DAI_MODEM:
+		if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+			snd_soc_dapm_stream_event(rtd, "MODEM Playback",
+					SND_SOC_DAPM_STREAM_STOP);
+		else
+			snd_soc_dapm_stream_event(rtd, "MODEM Capture",
+					SND_SOC_DAPM_STREAM_STOP);
+		break;
 	}
 
 	/* now calculate OPP level based upon DAPM widget status */
-	for (i = ABE_WIDGET_START; i < ABE_WIDGET_END; i++)
+	for (i = ABE_WIDGET_START; i < ABE_WIDGET_END; i++) {
+	//	dev_dbg(&rtd->dev, "opp w %d val 0x%x\n", i, abe->dapm[i]);
 		opp |= abe->dapm[i];
-	printk("OPP level at close is %d\n", (1 << (fls(opp) - 1)) * 25);
+	}
+	opp = (1 << (fls(opp) - 1)) * 25;
+	dev_dbg(&rtd->dev, "OPP level at close is %d\n", opp);
+
+	switch (opp) {
+	case 25:
+		//abe_set_opp_processing(ABE_OPP25);
+		break;
+	case 50:
+		//abe_set_opp_processing(ABE_OPP50);
+		break;
+	case 100:
+	default:
+		abe_set_opp_processing(ABE_OPP100);
+		break;
+	}
+
+//	snd_pcm_set_runtime_buffer(substream, NULL);
 
 	mutex_unlock(&abe->mutex);
 	return 0;
 }
 
-struct omap_aess_fe *omap_aess_get_be_status(int fe)
-{
-	return &abe->fe[fe];
-}
-EXPORT_SYMBOL_GPL(omap_aess_get_be_status);
-
 static struct snd_pcm_ops omap_aess_pcm_ops = {
 	.open = aess_open,
+	.hw_params	= aess_hw_params,
 	.prepare	= aess_prepare,
 	.close	= aess_close,
 };
+
+#if 0
+static u64 omap_pcm_dmamask = DMA_BIT_MASK(64);
+
+static int omap_pcm_preallocate_dma_buffer(struct snd_pcm *pcm,
+	int stream)
+{
+	struct snd_pcm_substream *substream = pcm->streams[stream].substream;
+	struct snd_dma_buffer *buf = &substream->dma_buffer;
+	size_t size = omap_abe_hardware.buffer_bytes_max;
+
+	buf->dev.type = SNDRV_DMA_TYPE_DEV;
+	buf->dev.dev = pcm->card->dev;
+	buf->private_data = NULL;
+	buf->area = dma_alloc_writecombine(pcm->card->dev, size,
+					   &buf->addr, GFP_KERNEL);
+	if (!buf->area)
+		return -ENOMEM;
+
+	buf->bytes = size;
+	return 0;
+}
+
+static void omap_pcm_free_dma_buffers(struct snd_pcm *pcm)
+{
+	struct snd_pcm_substream *substream;
+	struct snd_dma_buffer *buf;
+	int stream;
+
+	for (stream = 0; stream < 2; stream++) {
+		substream = pcm->streams[stream].substream;
+		if (!substream)
+			continue;
+
+		buf = &substream->dma_buffer;
+		if (!buf->area)
+			continue;
+
+		dma_free_writecombine(pcm->card->dev, buf->bytes,
+				      buf->area, buf->addr);
+		buf->area = NULL;
+	}
+}
+
+static int omap_pcm_new(struct snd_card *card, struct snd_soc_dai *dai,
+		 struct snd_pcm *pcm)
+{
+	int ret = 0;
+
+	if (!card->dev->dma_mask)
+		card->dev->dma_mask = &omap_pcm_dmamask;
+	if (!card->dev->coherent_dma_mask)
+		card->dev->coherent_dma_mask = DMA_BIT_MASK(64);
+
+	if (dai->driver->playback.channels_min) {
+		ret = omap_pcm_preallocate_dma_buffer(pcm,
+			SNDRV_PCM_STREAM_PLAYBACK);
+		if (ret)
+			goto out;
+	}
+
+	if (dai->driver->capture.channels_min) {
+		ret = omap_pcm_preallocate_dma_buffer(pcm,
+			SNDRV_PCM_STREAM_CAPTURE);
+		if (ret)
+			goto out;
+	}
+
+out:
+	return ret;
+}
+#endif
 
 static struct snd_soc_platform_driver omap_aess_platform = {
 	.ops	= &omap_aess_pcm_ops,
 	.probe = abe_probe,
 	.remove = abe_remove,
+	//.pcm_new	= omap_pcm_new,
+	//.pcm_free	= omap_pcm_free_dma_buffers,
 	.read = abe_dsp_read,
 	.write = abe_dsp_write,
 };
 
-static struct omap_device_pm_latency omap_aess_latency[] = {
-	{
-		.deactivate_func = omap_device_idle_hwmods,
-		.activate_func = omap_device_enable_hwmods,
-		.flags = OMAP_DEVICE_LATENCY_AUTO_ADJUST,
-	},
-};
-
 static int __devinit abe_engine_probe(struct platform_device *pdev)
 {
-	int ret;
+	int ret, i;
 
 	abe = kzalloc(sizeof(struct abe_data), GFP_KERNEL);
 	if (abe == NULL)
 		return -ENOMEM;
 	dev_set_drvdata(&pdev->dev, abe);
+
+	/* ZERO_labelID should really be 0 */
+	for (i = 0; i < ABE_ROUTES_UL + 2; i++)
+		abe->router[i] = ZERO_labelID;
 
 	pm_runtime_enable(&pdev->dev);
 
@@ -1323,9 +1699,7 @@ static int __devinit abe_engine_probe(struct platform_device *pdev)
 			&omap_aess_platform);
 	if (ret == 0)
 		return 0;
-#if 0
-err:
-#endif
+
 	kfree(abe);
 	return ret;
 }
