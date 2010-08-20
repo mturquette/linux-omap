@@ -42,6 +42,7 @@
 #include <plat/io.h>
 #include <plat/iommu.h>
 #include <plat/mailbox.h>
+#include <plat/omap-pm.h>
 #include <linux/i2c.h>
 #include <linux/gpio.h>
 #include <linux/semaphore.h>
@@ -192,6 +193,7 @@ static u32 cam2_prev_volt;
 static struct ipu_pm_object *pm_handle_appm3;
 static struct ipu_pm_object *pm_handle_sysm3;
 static struct workqueue_struct *ipu_wq;
+static struct pm_qos_request_list *pm_qos_handle;
 static struct iommu *p_iommu;
 struct omap_mbox *p_mbox_1;
 struct omap_mbox *p_mbox_2;
@@ -1048,6 +1050,9 @@ static inline int ipu_pm_get_sys_m3(int proc_id, u32 rcb_num)
 		return PM_INVAL_RCB_NUM;
 	rcb_p = (struct rcb_block *)&handle->rcb_table->rcb[rcb_num];
 
+	if (params->pm_sys_m3_counter)
+		return PM_UNSUPPORTED;
+
 	pr_info("Request SYS M3\n");
 
 	params->pm_sys_m3_counter++;
@@ -1078,6 +1083,9 @@ static inline int ipu_pm_get_app_m3(int proc_id, u32 rcb_num)
 	if (WARN_ON((rcb_num < RCB_MIN) || (rcb_num > RCB_MAX)))
 		return PM_INVAL_RCB_NUM;
 	rcb_p = (struct rcb_block *)&handle->rcb_table->rcb[rcb_num];
+
+	if (params->pm_app_m3_counter)
+		return PM_UNSUPPORTED;
 
 	pr_info("Request APP M3\n");
 
@@ -1110,6 +1118,9 @@ static inline int ipu_pm_get_l3_bus(int proc_id, u32 rcb_num)
 		return PM_INVAL_RCB_NUM;
 	rcb_p = (struct rcb_block *)&handle->rcb_table->rcb[rcb_num];
 
+	if (params->pm_l3_bus_counter)
+		return PM_UNSUPPORTED;
+
 	pr_info("Request L3 BUS\n");
 
 	params->pm_l3_bus_counter++;
@@ -1126,6 +1137,7 @@ static inline int ipu_pm_get_iva_hd(int proc_id, u32 rcb_num)
 	struct ipu_pm_object *handle;
 	struct ipu_pm_params *params;
 	struct rcb_block *rcb_p;
+	int retval;
 
 	/* get the handle to proper ipu pm object */
 	handle = ipu_pm_get_handle(proc_id);
@@ -1141,7 +1153,14 @@ static inline int ipu_pm_get_iva_hd(int proc_id, u32 rcb_num)
 		return PM_INVAL_RCB_NUM;
 	rcb_p = (struct rcb_block *)&handle->rcb_table->rcb[rcb_num];
 
+	if (params->pm_iva_hd_counter)
+		return PM_UNSUPPORTED;
+
 	pr_info("Request IVA_HD\n");
+	retval = omap_pm_set_max_mpu_wakeup_lat(&pm_qos_handle,
+						IPU_PM_MM_MPU_LAT_CONSTRAINT);
+	if (retval)
+		return PM_UNSUPPORTED;
 
 	params->pm_iva_hd_counter++;
 
@@ -1157,6 +1176,7 @@ static inline int ipu_pm_get_iss(int proc_id, u32 rcb_num)
 	struct ipu_pm_object *handle;
 	struct ipu_pm_params *params;
 	struct rcb_block *rcb_p;
+	int retval;
 
 	/* get the handle to proper ipu pm object */
 	handle = ipu_pm_get_handle(proc_id);
@@ -1172,7 +1192,14 @@ static inline int ipu_pm_get_iss(int proc_id, u32 rcb_num)
 		return PM_INVAL_RCB_NUM;
 	rcb_p = (struct rcb_block *)&handle->rcb_table->rcb[rcb_num];
 
+	if (params->pm_iss_counter)
+		return PM_UNSUPPORTED;
+
 	pr_info("Request ISS\n");
+	retval = omap_pm_set_max_mpu_wakeup_lat(&pm_qos_handle,
+						IPU_PM_MM_MPU_LAT_CONSTRAINT);
+	if (retval)
+		return PM_UNSUPPORTED;
 
 	params->pm_iss_counter++;
 
@@ -1455,9 +1482,13 @@ static inline int ipu_pm_rel_sys_m3(int proc_id, u32 rcb_num)
 
 	pr_info("Release SYS M3\n");
 
+	if (!params->pm_sys_m3_counter)
+		goto error;
 	params->pm_sys_m3_counter--;
 
 	return PM_SUCCESS;
+error:
+	return PM_UNSUPPORTED;
 }
 
 /*
@@ -1486,9 +1517,14 @@ static inline int ipu_pm_rel_app_m3(int proc_id, u32 rcb_num)
 
 	pr_info("Release APP M3\n");
 
+	if (!params->pm_app_m3_counter)
+		goto error;
 	params->pm_app_m3_counter--;
 
 	return PM_SUCCESS;
+error:
+	return PM_UNSUPPORTED;
+
 }
 
 /*
@@ -1517,9 +1553,13 @@ static inline int ipu_pm_rel_l3_bus(int proc_id, u32 rcb_num)
 
 	pr_info("Release L3 BUS\n");
 
+	if (!params->pm_l3_bus_counter)
+		goto error;
 	params->pm_l3_bus_counter--;
 
 	return PM_SUCCESS;
+error:
+	return PM_UNSUPPORTED;
 
 }
 
@@ -1532,6 +1572,7 @@ static inline int ipu_pm_rel_iva_hd(int proc_id, u32 rcb_num)
 	struct ipu_pm_object *handle;
 	struct ipu_pm_params *params;
 	struct rcb_block *rcb_p;
+	int retval;
 
 	/* get the handle to proper ipu pm object */
 	handle = ipu_pm_get_handle(proc_id);
@@ -1549,9 +1590,21 @@ static inline int ipu_pm_rel_iva_hd(int proc_id, u32 rcb_num)
 
 	pr_info("Release IVA_HD\n");
 
+	if (!params->pm_iva_hd_counter)
+		goto error;
+
 	params->pm_iva_hd_counter--;
 
+	if (params->pm_iva_hd_counter == 0 && params->pm_iss_counter == 0) {
+		retval = omap_pm_set_max_mpu_wakeup_lat(&pm_qos_handle,
+						IPU_PM_NO_MPU_LAT_CONSTRAINT);
+		if (retval)
+			goto error;
+	}
+
 	return PM_SUCCESS;
+error:
+	return PM_UNSUPPORTED;
 }
 
 /*
@@ -1563,6 +1616,7 @@ static inline int ipu_pm_rel_iss(int proc_id, u32 rcb_num)
 	struct ipu_pm_object *handle;
 	struct ipu_pm_params *params;
 	struct rcb_block *rcb_p;
+	int retval;
 
 	/* get the handle to proper ipu pm object */
 	handle = ipu_pm_get_handle(proc_id);
@@ -1580,9 +1634,21 @@ static inline int ipu_pm_rel_iss(int proc_id, u32 rcb_num)
 
 	pr_info("Release ISS\n");
 
+	if (!params->pm_iss_counter)
+		goto error;
+
 	params->pm_iss_counter--;
 
+	if (params->pm_iva_hd_counter == 0 && params->pm_iss_counter == 0) {
+		retval = omap_pm_set_max_mpu_wakeup_lat(&pm_qos_handle,
+						IPU_PM_NO_MPU_LAT_CONSTRAINT);
+		if (retval)
+			goto error;
+	}
+
 	return PM_SUCCESS;
+error:
+	return PM_UNSUPPORTED;
 }
 
 /*
