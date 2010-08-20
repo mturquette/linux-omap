@@ -35,6 +35,8 @@
 #include <plat/omap_device.h>
 #include <plat/omap_hwmod.h>
 #include <plat/omap4-keypad.h>
+#include <plat/mcbsp.h>
+#include <sound/omap-abe-dsp.h>
 
 #include "mux.h"
 
@@ -317,6 +319,73 @@ static inline void omap_init_mbox(void)
 static inline void omap_init_mbox(void) { }
 #endif /* CONFIG_OMAP_MBOX_FWK */
 
+#if defined CONFIG_ARCH_OMAP4
+
+static struct omap4_abe_dsp_pdata omap4_abe_dsp_config = {
+	/* FIXME: dsp */
+//	int (*device_enable) (struct platform_device *pdev);
+	//int (*device_shutdown) (struct platform_device *pdev);
+//	int (*device_idle) (struct platform_device *pdev);
+};
+
+static struct platform_device codec_dmic0 = {
+	.name	= "dmic-codec",
+	.id	= 0,
+};
+
+static struct platform_device codec_dmic1 = {
+	.name	= "dmic-codec",
+	.id	= 1,
+};
+
+static struct platform_device codec_dmic2 = {
+	.name	= "dmic-codec",
+	.id	= 2,
+};
+
+static struct platform_device omap_abe_dai = {
+	.name	= "omap-abe-dai",
+	.id	= -1,
+};
+
+static struct platform_device omap_dsp_audio = {
+	.name	= "omap-dsp-audio",
+	.id	= -1,
+	.dev		= {
+		.platform_data = &omap4_abe_dsp_config,
+	},
+};
+
+static struct platform_device omap_dmic_dai0 = {
+	.name	= "omap-dmic-dai",
+	.id	= 0,
+};
+
+static struct platform_device omap_dmic_dai1 = {
+	.name	= "omap-dmic-dai",
+	.id	= 1,
+};
+
+static struct platform_device omap_dmic_dai2 = {
+	.name	= "omap-dmic-dai",
+	.id	= 2,
+};
+
+static inline void omap_init_abe(void)
+{
+	platform_device_register(&codec_dmic0);
+	platform_device_register(&codec_dmic1);
+	platform_device_register(&codec_dmic2);
+	platform_device_register(&omap_abe_dai);
+	platform_device_register(&omap_dsp_audio);
+	platform_device_register(&omap_dmic_dai0);
+	platform_device_register(&omap_dmic_dai1);
+	platform_device_register(&omap_dmic_dai2);
+}
+#else
+static inline void omap_init_abe(void) {}
+#endif
+
 #if defined(CONFIG_OMAP_STI)
 
 #if defined(CONFIG_ARCH_OMAP2)
@@ -374,6 +443,43 @@ static inline void omap_init_sti(void)
 }
 #else
 static inline void omap_init_sti(void) {}
+#endif
+
+#if defined(CONFIG_SND_SOC) || defined(CONFIG_SND_SOC_MODULE)
+
+static struct platform_device omap_pcm = {
+	.name	= "omap-pcm-audio",
+	.id	= -1,
+};
+
+/*
+ * OMAP2420 has 2 McBSP ports
+ * OMAP2430 has 5 McBSP ports
+ * OMAP3 has 5 McBSP ports
+ * OMAP4 has 4 McBSP ports
+ */
+OMAP_MCBSP_PLATFORM_DEVICE(1);
+OMAP_MCBSP_PLATFORM_DEVICE(2);
+OMAP_MCBSP_PLATFORM_DEVICE(3);
+OMAP_MCBSP_PLATFORM_DEVICE(4);
+OMAP_MCBSP_PLATFORM_DEVICE(5);
+
+static void omap_init_audio(void)
+{
+	platform_device_register(&omap_mcbsp1);
+	platform_device_register(&omap_mcbsp2);
+	if (cpu_is_omap243x() || cpu_is_omap34xx() || cpu_is_omap44xx()) {
+		platform_device_register(&omap_mcbsp3);
+		platform_device_register(&omap_mcbsp4);
+	}
+	if (cpu_is_omap243x() || cpu_is_omap34xx())
+		platform_device_register(&omap_mcbsp5);
+
+	platform_device_register(&omap_pcm);
+}
+
+#else
+static inline void omap_init_audio(void) {}
 #endif
 
 #if defined(CONFIG_SPI_OMAP24XX) || defined(CONFIG_SPI_OMAP24XX_MODULE)
@@ -873,6 +979,8 @@ static int __init omap2_init_devices(void)
 	 * in alphabetical order so they're easier to sort through.
 	 */
 	omap_init_32k();
+	omap_init_abe();
+	omap_init_audio();
 	omap_init_camera();
 	omap_init_mbox();
 	omap_init_mcspi();
