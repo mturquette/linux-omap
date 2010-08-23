@@ -606,7 +606,7 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					(unsigned int)pm_msg.whole,
 					true);
 			if (retval < 0)
-				pr_err("Error sending notify event\n");
+				goto error_send;
 			/* wait until event from IPU (ipu_pm_notify_callback)*/
 			retval = down_timeout
 					(&handle->pm_event[PM_SUSPEND]
@@ -614,10 +614,8 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					msecs_to_jiffies(params->timeout));
 			pm_msg.whole = handle->pm_event[PM_SUSPEND].pm_msg;
 			if (WARN_ON((retval < 0) ||
-					(pm_msg.fields.parm != PM_SUCCESS))) {
-				pr_err("Error sending Suspend\n");
-				pm_ack = EBUSY;
-			}
+					(pm_msg.fields.parm != PM_SUCCESS)))
+				goto error;
 			break;
 		case PM_RESUME:
 			pm_msg.fields.msg_type = PM_NOTIFICATIONS;
@@ -634,7 +632,7 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					(unsigned int)pm_msg.whole,
 					true);
 			if (retval < 0)
-				pr_err("Error sending notify event\n");
+				goto error_send;
 			/* wait until event from IPU (ipu_pm_notify_callback)*/
 			retval = down_timeout
 					(&handle->pm_event[PM_RESUME]
@@ -642,10 +640,8 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					msecs_to_jiffies(params->timeout));
 			pm_msg.whole = handle->pm_event[PM_RESUME].pm_msg;
 			if (WARN_ON((retval < 0) ||
-					(pm_msg.fields.parm != PM_SUCCESS))) {
-				pr_err("Error sending Resume\n");
-				pm_ack = EBUSY;
-			}
+					(pm_msg.fields.parm != PM_SUCCESS)))
+				goto error;
 			break;
 		case PM_HIBERNATE:
 			pm_msg.fields.msg_type = PM_NOTIFICATIONS;
@@ -662,7 +658,7 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					(unsigned int)pm_msg.whole,
 					true);
 			if (retval < 0)
-				pr_err("Error sending notify event\n");
+				goto error_send;
 			/* wait until event from IPU (ipu_pm_notify_callback)*/
 			retval = down_timeout
 					(&handle->pm_event[PM_HIBERNATE]
@@ -670,10 +666,9 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					msecs_to_jiffies(params->timeout));
 			pm_msg.whole = handle->pm_event[PM_HIBERNATE].pm_msg;
 			if (WARN_ON((retval < 0) ||
-					(pm_msg.fields.parm != PM_SUCCESS))) {
-				pr_err("Error sending hibernate\n");
-				pm_ack = EBUSY;
-			} else {
+					(pm_msg.fields.parm != PM_SUCCESS)))
+				goto error;
+			else {
 				/*Remote Proc is ready to hibernate*/
 				handle->rcb_table->state_flag |=
 							REMOTE_PROC_DOWN;
@@ -696,7 +691,7 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					(unsigned int)pm_msg.whole,
 					true);
 			if (retval < 0)
-				pr_err("Error sending notify event\n");
+				goto error_send;
 			/* wait until event from IPU (ipu_pm_notify_callback)*/
 			retval = down_timeout
 					(&handle->pm_event[PM_PID_DEATH]
@@ -704,14 +699,18 @@ int ipu_pm_notifications(enum pm_event_type event_type, void *data)
 					msecs_to_jiffies(params->timeout));
 			pm_msg.whole = handle->pm_event[PM_PID_DEATH].pm_msg;
 			if (WARN_ON((retval < 0) ||
-					(pm_msg.fields.parm != PM_SUCCESS))) {
-				pr_err("Error sending PID Death\n");
-				pm_ack = EBUSY;
-			}
+					(pm_msg.fields.parm != PM_SUCCESS)))
+				goto error;
 			break;
 		}
 	}
 	return pm_ack;
+
+error_send:
+	pr_err("Error notify_send event\n");
+error:
+	pr_err("Error sending Notification events\n");
+	return -EBUSY;
 }
 EXPORT_SYMBOL(ipu_pm_notifications);
 
