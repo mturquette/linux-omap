@@ -524,12 +524,8 @@ static struct platform_device wl128x_device = {
 static struct omap_dss_device *sdp4430_dss_devices[] = {
 	&sdp4430_lcd_device,
 	&sdp4430_lcd2_device,
-#ifdef CONFIG_OMAP2_DSS_HDMI
 	&sdp4430_hdmi_device,
-#endif
-#ifdef CONFIG_PANEL_PICO_DLP
 	&sdp4430_picoDLP_device,
-#endif
 };
 
 static struct omap_dss_board_info sdp4430_dss_data = {
