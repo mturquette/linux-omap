@@ -43,7 +43,6 @@ config ARCH_OMAP4
 	select ARM_THUMBEE
 	select DEVTMPFS
 	select UNIX
-	select USB_ARCH_HAS_EHCI
 endchoice
 
 comment "OMAP Feature Selections"

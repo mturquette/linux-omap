@@ -5768,7 +5768,9 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_l3_main_2_hwmod,
 	&omap44xx_l3_main_3_hwmod,
 	/* l4 class */
+#if 0
 	&omap44xx_l4_abe_hwmod,
+#endif
 	&omap44xx_l4_cfg_hwmod,
 	&omap44xx_l4_per_hwmod,
 	&omap44xx_l4_wkup_hwmod,
@@ -5782,6 +5784,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	/* dmic class */
 /*	&omap44xx_dmic_hwmod, */
 	/* dsp class */
+#if 0
 	&omap44xx_dsp_hwmod,
 	&omap44xx_dsp_c0_hwmod,
 	/* dss class */
@@ -5800,6 +5803,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	/* fdif class */
 /*	&omap44xx_fdif_hwmod, */
 	/* gpio class */
+#endif
 	&omap44xx_gpio1_hwmod,
 	&omap44xx_gpio2_hwmod,
 	&omap44xx_gpio3_hwmod,
@@ -5807,16 +5811,19 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_gpio5_hwmod,
 	&omap44xx_gpio6_hwmod,
 	/* gpmc class */
+#if 0
 	&omap44xx_gpmc_hwmod,
 	/* gpu class */
 	&omap44xx_gpu_hwmod,
 	/* hsi class */
 /*	&omap44xx_hsi_hwmod, */
+#endif
 	/* i2c class */
 	&omap44xx_i2c1_hwmod,
 	&omap44xx_i2c2_hwmod,
 	&omap44xx_i2c3_hwmod,
 	&omap44xx_i2c4_hwmod,
+#if 0
 	/* ipu class */
 	&omap44xx_ipu_hwmod,
 	&omap44xx_ipu_c0_hwmod,
@@ -5828,27 +5835,34 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_iva_seq0_hwmod,
 	&omap44xx_iva_seq1_hwmod,
 	/* kbd class */
+#endif
 	&omap44xx_kbd_hwmod,
+#if 0
 	/* mailbox class */
 /*	&omap44xx_mailbox_hwmod, */
 	/* mcbsp class */
+#endif
 	&omap44xx_mcbsp1_hwmod,
 	&omap44xx_mcbsp2_hwmod,
 	&omap44xx_mcbsp3_hwmod,
 	&omap44xx_mcbsp4_hwmod,
 	/* mcpdm class */
+#if 0
 	&omap44xx_mcpdm_hwmod,
+#endif
 	/* mcspi class */
 	&omap44xx_mcspi1_hwmod,
 	&omap44xx_mcspi2_hwmod,
 	&omap44xx_mcspi3_hwmod,
 	&omap44xx_mcspi4_hwmod,
 	/* mmc class */
+#if 0
 	&omap44xx_mmc1_hwmod,
 	&omap44xx_mmc2_hwmod,
 	&omap44xx_mmc3_hwmod,
 	&omap44xx_mmc4_hwmod,
 	&omap44xx_mmc5_hwmod,
+#endif
 	/* mpu class */
 	&omap44xx_mpu_hwmod,
 	/* sl2if class */
@@ -5856,16 +5870,19 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	/* slimbus class */
 /*	&omap44xx_slimbus1_hwmod, */
 /*	&omap44xx_slimbus2_hwmod, */
+#if 0
 	/* smartreflex class */
 	&omap44xx_smartreflex_core_hwmod,
 	&omap44xx_smartreflex_iva_hwmod,
 	&omap44xx_smartreflex_mpu_hwmod,
+#endif
 	/* spinlock class */
 	&omap44xx_spinlock_hwmod,
 	/* timer class */
 	&omap44xx_timer1_hwmod,
 	&omap44xx_timer2_hwmod,
 	&omap44xx_timer3_hwmod,
+#if 0
 	&omap44xx_timer4_hwmod,
 	&omap44xx_timer5_hwmod,
 	&omap44xx_timer6_hwmod,
@@ -5874,6 +5891,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_timer9_hwmod,
 	&omap44xx_timer10_hwmod,
 	&omap44xx_timer11_hwmod,
+#endif
 	/* uart class */
 	&omap44xx_uart1_hwmod,
 	&omap44xx_uart2_hwmod,
@@ -5884,7 +5902,9 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	/* usb_host_hs class */
 /*	&omap44xx_usb_host_hs_hwmod, */
 	/* usb_otg_hs class */
+#if 0
 	&omap44xx_usb_otg_hs_hwmod,
+#endif
 	/* usb_tll_hs class */
 /*	&omap44xx_usb_tll_hs_hwmod, */
 	/* wd_timer class */

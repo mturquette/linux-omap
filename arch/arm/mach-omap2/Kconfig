@@ -191,36 +191,6 @@ config MACH_OMAP_4430SDP
 	bool "OMAP 4430 SDP board"
 	depends on ARCH_OMAP4
 	select HIGHMEM
-	select TWL6030_PWM
-	select TWL6030_GPADC
-	select NEW_LEDS
-	select LEDS_CLASS
-	select LEDS_PWM
-	select LEDS_GPIO
-	select LEDS_GPIO_PLATFORM
-	select INPUT_CMA3000_I2C
-	select SENSORS_BH1780
-	select MISC_DEVICES
-	select BMP085
-	select STAGING
-	select IIO
-	select SENSORS_HMC5843
-	select INPUT_SFH7741
-	select HWMON
-	select SENSORS_LM75
-	select INPUT_MISC
-	select INPUT_KEYBOARD
-	select INPUT_TOUCHSCREEN
-	select TOUCHSCREEN_SYNTM12XX
-	select POWER_SUPPLY
-	select TWL6030_BCI_BATTERY
-	select CHARGER_BQ2415x
-
-
-
-config MACH_OMAP4_PANDA
-	bool "OMAP4 based Panda board"
-	depends on ARCH_OMAP4
 
 config ERRATA_OMAP4_AXI2OCP
 	bool "OMAP 4430 axi2ocp errata workaround"

@@ -21,7 +21,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA
  */
-
+#if 0
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/scatterlist.h>
@@ -908,3 +908,4 @@ MODULE_DESCRIPTION("Userspace DMM to IOMMU");
 MODULE_AUTHOR("Hari Kanigeri");
 MODULE_AUTHOR("Ramesh Gupta");
 MODULE_AUTHOR("Ohad Ben-Cohen");
+#endif

@@ -9,7 +9,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-
+#if 0
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
@@ -1300,3 +1300,4 @@ module_exit(iovmm_exit);
 MODULE_DESCRIPTION("omap iommu: simple virtual address space management");
 MODULE_AUTHOR("Hiroshi DOYU <Hiroshi.DOYU@nokia.com>");
 MODULE_LICENSE("GPL v2");
+#endif

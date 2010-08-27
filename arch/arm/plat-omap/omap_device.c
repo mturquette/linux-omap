@@ -146,6 +146,7 @@ static int _omap_device_activate(struct omap_device *od, u8 ignore_lat)
 
 		if (act_lat > odpl->activate_lat) {
 			odpl->activate_lat_worst = act_lat;
+#if 0
 			if (odpl->flags & OMAP_DEVICE_LATENCY_AUTO_ADJUST) {
 				odpl->activate_lat = act_lat;
 				pr_warning("omap_device: %s.%d: new worst case "
@@ -159,6 +160,7 @@ static int _omap_device_activate(struct omap_device *od, u8 ignore_lat)
 					   od->pdev.name, od->pdev.id,
 					   od->pm_lat_level, act_lat,
 					   odpl->activate_lat);
+#endif
 		}
 
 		od->dev_wakeup_lat -= odpl->activate_lat;
@@ -214,6 +216,7 @@ static int _omap_device_deactivate(struct omap_device *od, u8 ignore_lat)
 
 		if (deact_lat > odpl->deactivate_lat) {
 			odpl->deactivate_lat_worst = deact_lat;
+#if 0
 			if (odpl->flags & OMAP_DEVICE_LATENCY_AUTO_ADJUST) {
 				odpl->deactivate_lat = deact_lat;
 				pr_warning("omap_device: %s.%d: new worst case "
@@ -227,6 +230,7 @@ static int _omap_device_deactivate(struct omap_device *od, u8 ignore_lat)
 					   od->pdev.name, od->pdev.id,
 					   od->pm_lat_level, deact_lat,
 					   odpl->deactivate_lat);
+#endif
 		}
 
 

@@ -17,6 +17,7 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/irq.h>
+#include <linux/gpio.h>
 
 #include <plat/powerdomain.h>
 #include <plat/clockdomain.h>
@@ -40,6 +41,53 @@ struct power_state {
 
 static LIST_HEAD(pwrst_list);
 static struct powerdomain *mpu_pwrdm;
+
+/* This sets pwrdm state (other than mpu & core. Currently only ON &
+ * RET are supported. Function is assuming that clkdm doesn't have
+ * hw_sup mode enabled. */
+int set_pwrdm_state(struct powerdomain *pwrdm, u32 state)
+{
+	u32 cur_state;
+	int sleep_switch = 0;
+	int ret = 0;
+
+	if (pwrdm == NULL || IS_ERR(pwrdm))
+		return -EINVAL;
+
+	while (!(pwrdm->pwrsts & (1 << state))) {
+		if (state == PWRDM_POWER_OFF)
+			return ret;
+		state--;
+	}
+
+	cur_state = pwrdm_read_next_pwrst(pwrdm);
+	if (cur_state == state)
+		return ret;
+
+	if (pwrdm_read_pwrst(pwrdm) < PWRDM_POWER_ON) {
+		omap2_clkdm_wakeup(pwrdm->pwrdm_clkdms[0]);
+		sleep_switch = 1;
+		pwrdm_wait_transition(pwrdm);
+	}
+
+	ret = pwrdm_set_next_pwrst(pwrdm, state);
+	if (ret) {
+#if 0
+		printk(KERN_ERR "Unable to set state of powerdomain: %s\n",
+		       pwrdm->name);
+#endif
+		goto err;
+	}
+
+	if (sleep_switch) {
+		omap2_clkdm_allow_idle(pwrdm->pwrdm_clkdms[0]);
+		pwrdm_wait_transition(pwrdm);
+		pwrdm_state_switch(pwrdm);
+	}
+
+err:
+	return ret;
+}
 
 #ifdef CONFIG_SUSPEND
 static int omap4_pm_prepare(void)
@@ -70,31 +118,56 @@ static int omap4_pm_suspend(void)
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_KBD_CTL);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPT1);
 
-	/*
-	 * Program the MPU and CPU0 to hit low
-	 * power state
-	 */
-	pwrdm_clear_all_prev_pwrst(mpu_pwrdm);
-	pwrdm_set_next_pwrst(mpu_pwrdm, PWRDM_POWER_OFF);
+	/* Read current next_pwrsts */
+	list_for_each_entry(pwrst, &pwrst_list, node)
+		pwrst->saved_state = pwrdm_read_next_pwrst(pwrst->pwrdm);
+
+	omap_uart_prepare_suspend();
+	omap_uart_prepare_idle(0);
+	omap_uart_prepare_idle(1);
+	omap_uart_prepare_idle(2);
+	omap_uart_prepare_idle(3);
+	omap2_gpio_prepare_for_idle(0);
+
+	/* program all powerdomains to sleep */
+	list_for_each_entry(pwrst, &pwrst_list, node) {
+		pwrdm_clear_all_prev_pwrst(pwrst->pwrdm);
+		if (strcmp(pwrst->pwrdm->name, "cpu1_pwrdm"))
+			if (set_pwrdm_state(pwrst->pwrdm, PWRDM_POWER_RET))
+				goto restore;
+	}
+	/* Put Core DPLL in low power bypass */
+
 	omap4_enter_lowpower(cpu_id, PWRDM_POWER_OFF);
 
-	/*
-	* Enable all wakeup sources post wakeup
-	*/
-	omap4_wakeupgen_set_all(cpu_id);
+restore:
+	omap2_gpio_resume_after_idle(0);
+	omap_uart_resume_idle(0);
+	omap_uart_resume_idle(1);
+	omap_uart_resume_idle(2);
+	omap_uart_resume_idle(3);
 
 	/* Print the previous power domain states */
 	pr_info("Read Powerdomain states as ...\n");
 	pr_info("0 : OFF, 1 : RETENTION, 2 : ON-INACTIVE, 3 : ON-ACTIVE\n");
 	list_for_each_entry(pwrst, &pwrst_list, node) {
-		if (!strcmp(pwrst->pwrdm->name, "cpu0_pwrdm") ||
-			(!strcmp(pwrst->pwrdm->name, "cpu1_pwrdm")) ||
-			(!strcmp(pwrst->pwrdm->name, "mpu_pwrdm"))) {
 			state = pwrdm_read_prev_pwrst(pwrst->pwrdm);
 			pr_info("Powerdomain (%s) entered state %d\n",
 				       pwrst->pwrdm->name, state);
-		}
+			state = pwrdm_read_pwrst(pwrst->pwrdm);
+			pr_info("Powerdomain (%s) is in state %d\n",
+					pwrst->pwrdm->name, state);
 	}
+
+	/* restore next_pwrsts */
+	list_for_each_entry(pwrst, &pwrst_list, node)
+		if (strcmp(pwrst->pwrdm->name, "cpu1_pwrdm"))
+			set_pwrdm_state(pwrst->pwrdm, pwrst->saved_state);
+	/*
+	* Enable all wakeup sources post wakeup
+	*/
+	omap4_wakeupgen_set_all(cpu_id);
+
 	return 0;
 }
 
@@ -168,10 +241,10 @@ static int __init pwrdms_setup(struct powerdomain *pwrdm, void *unused)
 	if (!pwrst)
 		return -ENOMEM;
 	pwrst->pwrdm = pwrdm;
-	pwrst->next_state = PWRDM_POWER_ON;
+	pwrst->next_state = PWRDM_POWER_RET;
 	list_add(&pwrst->node, &pwrst_list);
 
-	return pwrdm_set_next_pwrst(pwrst->pwrdm, pwrst->next_state);
+	return set_pwrdm_state(pwrst->pwrdm, pwrst->next_state);
 }
 
 static void __init prcm_setup_regs(void)
