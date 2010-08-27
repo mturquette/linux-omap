@@ -146,10 +146,10 @@ static int omap_target(struct cpufreq_policy *policy,
 	 */
 	freqs.new = omap_getspeed(policy->cpu);
 /*	for_each_cpu(i, policy->cpus) { */
-	for (i = 0; i < 2 ; i++)
+/*	for (i = 0; i < 2 ; i++)
 		per_cpu(cpu_data, i).loops_per_jiffy =
 		cpufreq_scale(per_cpu(cpu_data, i).loops_per_jiffy,
-				freqs.old, freqs.new);
+				freqs.old, freqs.new);*/
 #endif
 #endif
 	return ret;
@@ -166,10 +166,18 @@ static int __init omap_cpu_init(struct cpufreq_policy *policy)
 	if (IS_ERR(mpu_clk))
 		return PTR_ERR(mpu_clk);
 
+#ifndef CONFIG_SMP
 	if (policy->cpu != 0)
 		return -EINVAL;
+#endif
 
+	/* XXX can OMAP2/3 use hard_smp_processor_id? */
+#ifdef CONFIG_SMP
+	policy->cur = policy->min = policy->max =
+		omap_getspeed(hard_smp_processor_id());
+#else
 	policy->cur = policy->min = policy->max = omap_getspeed(0);
+#endif
 
 	if (!(cpu_is_omap34xx() || cpu_is_omap44xx())) {
 		clk_init_cpufreq_table(&freq_table);
@@ -192,7 +200,11 @@ static int __init omap_cpu_init(struct cpufreq_policy *policy)
 
 	policy->min = policy->cpuinfo.min_freq;
 	policy->max = policy->cpuinfo.max_freq;
+#ifdef CONFIG_SMP
+	policy->cur = omap_getspeed(hard_smp_processor_id());
+#else
 	policy->cur = omap_getspeed(0);
+#endif
 
 	/* FIXME: what's the actual transition time? */
 	policy->cpuinfo.transition_latency = 300 * 1000;
