@@ -136,9 +136,17 @@ static int omap4_pm_suspend(void)
 			if (set_pwrdm_state(pwrst->pwrdm, PWRDM_POWER_RET))
 				goto restore;
 	}
-	/* Put Core DPLL in low power bypass */
 
+	/* FIXME: Enable AUto gating PER M3*/
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK, 0,
+		OMAP4430_CM2_CKGEN_MOD,	OMAP4_CM_DIV_M3_DPLL_PER_OFFSET);
+	/* Put Core DPLL in low power bypass */
 	omap4_enter_lowpower(cpu_id, PWRDM_POWER_OFF);
+	
+	/* FIXME: Disbale AUto gating PER M3*/
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK,
+		OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK,
+		OMAP4430_CM2_CKGEN_MOD,	OMAP4_CM_DIV_M3_DPLL_PER_OFFSET);
 
 restore:
 	omap2_gpio_resume_after_idle(0);
