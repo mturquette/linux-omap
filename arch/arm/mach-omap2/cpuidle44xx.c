@@ -112,6 +112,10 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 	if (cx->type > OMAP4_STATE_C1)
 		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_ENTER, &cpu_id);
 
+#ifdef CONFIG_PM_DEBUG
+	pwrdm_pre_transition();
+#endif
+
 	pwrdm_set_logic_retst(mpu_pd, cx->mpu_logic_state);
 	pwrdm_set_next_pwrst(mpu_pd, cx->mpu_state);
 	omap4_enter_lowpower(dev->cpu, cx->cpu0_state);
@@ -119,13 +123,17 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 	if (cx->type > OMAP4_STATE_C1)
 		clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &cpu_id);
 
+#ifdef CONFIG_PM_DEBUG
+	pwrdm_post_transition();
+#endif
+
+
 return_sleep_time:
 	getnstimeofday(&ts_postidle);
 	ts_idle = timespec_sub(ts_postidle, ts_preidle);
 
 	local_irq_enable();
 	local_fiq_enable();
-
 
 	return ts_idle.tv_nsec / NSEC_PER_USEC + ts_idle.tv_sec * USEC_PER_SEC;;
 }

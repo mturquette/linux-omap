@@ -72,10 +72,8 @@ int set_pwrdm_state(struct powerdomain *pwrdm, u32 state)
 
 	ret = pwrdm_set_next_pwrst(pwrdm, state);
 	if (ret) {
-#if 0
 		printk(KERN_ERR "Unable to set state of powerdomain: %s\n",
 		       pwrdm->name);
-#endif
 		goto err;
 	}
 
@@ -108,6 +106,10 @@ static int omap4_pm_suspend(void)
 	if (wakeup_timer_seconds || wakeup_timer_milliseconds)
 		omap2_pm_wakeup_on_timer(wakeup_timer_seconds,
 					 wakeup_timer_milliseconds);
+#ifdef CONFIG_PM_DEBUG
+	pwrdm_pre_transition();
+#endif
+
 	/*
 	 * Clear all wakeup sources and keep
 	 * only Debug UART, Keypad and GPT1 interrupt
@@ -132,9 +134,12 @@ static int omap4_pm_suspend(void)
 	/* program all powerdomains to sleep */
 	list_for_each_entry(pwrst, &pwrst_list, node) {
 		pwrdm_clear_all_prev_pwrst(pwrst->pwrdm);
-		if (strcmp(pwrst->pwrdm->name, "cpu1_pwrdm"))
-			if (set_pwrdm_state(pwrst->pwrdm, PWRDM_POWER_RET))
-				goto restore;
+		if (strcmp(pwrst->pwrdm->name, "cpu1_pwrdm")) {
+			if (!strcmp(pwrst->pwrdm->name, "mpu_pwrdm"))
+				set_pwrdm_state(pwrst->pwrdm, PWRDM_POWER_OFF);
+			else
+				set_pwrdm_state(pwrst->pwrdm, PWRDM_POWER_RET);
+		}
 	}
 
 	/* FIXME: Enable AUto gating PER M3*/
@@ -176,6 +181,9 @@ restore:
 	*/
 	omap4_wakeupgen_set_all(cpu_id);
 
+#ifdef CONFIG_PM_DEBUG
+	pwrdm_post_transition();
+#endif
 	return 0;
 }
 
