@@ -3519,8 +3519,8 @@ static struct omap_hwmod omap44xx_mcspi4_hwmod = {
 
 static struct omap_hwmod_class_sysconfig omap44xx_mmc_sysc = {
 	.rev_offs	= 0x0000,
-	.sysc_offs	= 0x0110,
-	.syss_offs	= 0x0114,
+	.sysc_offs	= 0x0010,
+	.syss_offs	= 0x0014,
 	.sysc_flags	= (SYSC_HAS_SIDLEMODE | SYSC_HAS_EMUFREE |
 			   SYSC_HAS_SOFTRESET | SYSC_HAS_MIDLEMODE),
 	.idlemodes	= (SIDLE_FORCE | SIDLE_NO | SIDLE_SMART |
@@ -5795,6 +5795,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_dss_hdmi_hwmod,
 	&omap44xx_dss_rfbi_hwmod,
 	&omap44xx_dss_venc_hwmod,
+#endif
 	/* elm class */
 /*	&omap44xx_elm_hwmod, */
 	/* emif class */
@@ -5803,7 +5804,6 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	/* fdif class */
 /*	&omap44xx_fdif_hwmod, */
 	/* gpio class */
-#endif
 	&omap44xx_gpio1_hwmod,
 	&omap44xx_gpio2_hwmod,
 	&omap44xx_gpio3_hwmod,
@@ -5856,13 +5856,11 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_mcspi3_hwmod,
 	&omap44xx_mcspi4_hwmod,
 	/* mmc class */
-#if 0
 	&omap44xx_mmc1_hwmod,
 	&omap44xx_mmc2_hwmod,
 	&omap44xx_mmc3_hwmod,
 	&omap44xx_mmc4_hwmod,
 	&omap44xx_mmc5_hwmod,
-#endif
 	/* mpu class */
 	&omap44xx_mpu_hwmod,
 	/* sl2if class */
@@ -5870,28 +5868,26 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	/* slimbus class */
 /*	&omap44xx_slimbus1_hwmod, */
 /*	&omap44xx_slimbus2_hwmod, */
-#if 0
 	/* smartreflex class */
 	&omap44xx_smartreflex_core_hwmod,
 	&omap44xx_smartreflex_iva_hwmod,
 	&omap44xx_smartreflex_mpu_hwmod,
-#endif
 	/* spinlock class */
 	&omap44xx_spinlock_hwmod,
 	/* timer class */
 	&omap44xx_timer1_hwmod,
 	&omap44xx_timer2_hwmod,
 	&omap44xx_timer3_hwmod,
-#if 0
 	&omap44xx_timer4_hwmod,
+#if 0	/* PART OF ABE clock domain */
 	&omap44xx_timer5_hwmod,
 	&omap44xx_timer6_hwmod,
 	&omap44xx_timer7_hwmod,
 	&omap44xx_timer8_hwmod,
+#endif
 	&omap44xx_timer9_hwmod,
 	&omap44xx_timer10_hwmod,
 	&omap44xx_timer11_hwmod,
-#endif
 	/* uart class */
 	&omap44xx_uart1_hwmod,
 	&omap44xx_uart2_hwmod,
@@ -5902,9 +5898,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	/* usb_host_hs class */
 /*	&omap44xx_usb_host_hs_hwmod, */
 	/* usb_otg_hs class */
-#if 0
 	&omap44xx_usb_otg_hs_hwmod,
-#endif
 	/* usb_tll_hs class */
 /*	&omap44xx_usb_tll_hs_hwmod, */
 	/* wd_timer class */
