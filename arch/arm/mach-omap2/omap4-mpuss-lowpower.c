@@ -502,11 +502,23 @@ cpu_prepare:
 	 * targeted power state
 	 */
 	__omap4_cpu_suspend(cpu, save_state);
+	wakeup_cpu = hard_smp_processor_id();
+
+	/*
+	 * Restore the CPUx power state to ON otherwise CPUx
+	 * power domain can transitions to programmed low power
+	 * state while doing WFI outside the low powe code. On
+	 * secure devices, CPUx does WFI which can result in
+	 * domain transition
+	 */
+	if (wakeup_cpu)
+		pwrdm_set_next_pwrst(cpu1_pwrdm, PWRDM_POWER_ON);
+	else
+		pwrdm_set_next_pwrst(cpu0_pwrdm, PWRDM_POWER_ON);
 
 	/*
 	 * Check the CPUx previous power state
 	 */
-	wakeup_cpu = hard_smp_processor_id();
 	if (read_cpu_prev_pwrst(wakeup_cpu) == PWRDM_POWER_OFF) {
 		cpu_init();
 		restore_mmu_table_entry();
