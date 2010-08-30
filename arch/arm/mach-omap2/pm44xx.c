@@ -165,11 +165,14 @@ restore:
 	pr_info("0 : OFF, 1 : RETENTION, 2 : ON-INACTIVE, 3 : ON-ACTIVE\n");
 	list_for_each_entry(pwrst, &pwrst_list, node) {
 			state = pwrdm_read_prev_pwrst(pwrst->pwrdm);
-			pr_info("Powerdomain (%s) entered state %d\n",
-				       pwrst->pwrdm->name, state);
-			state = pwrdm_read_pwrst(pwrst->pwrdm);
-			pr_info("Powerdomain (%s) is in state %d\n",
+			if (state == -EINVAL) {
+				state = pwrdm_read_pwrst(pwrst->pwrdm);
+				pr_info("Powerdomain (%s) is in state %d\n",
 					pwrst->pwrdm->name, state);
+			} else {
+				pr_info("Powerdomain (%s) entered state %d\n",
+				       pwrst->pwrdm->name, state);
+			}
 	}
 
 	/* restore next_pwrsts */
