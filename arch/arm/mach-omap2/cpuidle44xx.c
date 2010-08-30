@@ -153,7 +153,13 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK, 0,
 		OMAP4430_CM2_CKGEN_MOD,	OMAP4_CM_DIV_M3_DPLL_PER_OFFSET);
 
+	/* FIXME:Force USB OTG to force standby and force idle */
+	omap_writel(0x5, 0x4A0AB404);
+
 	omap4_enter_lowpower(dev->cpu, cx->cpu0_state);
+
+	/* FIXME: Make USB OTG go back to Smart standby and smart idle */
+	omap_writel(0x2015, 0x4A0AB404);
 
 	/* FIXME: Disbale AUto gating PER M3*/
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK,

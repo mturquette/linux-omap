@@ -153,6 +153,10 @@ static int omap4_pm_suspend(void)
 	/* FIXME: Enable AUto gating PER M3*/
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK, 0,
 		OMAP4430_CM2_CKGEN_MOD,	OMAP4_CM_DIV_M3_DPLL_PER_OFFSET);
+
+	/* FIXME:Force USB OTG to force standby and force idle */
+	omap_writel(0x5, 0x4A0AB404);
+
 	/* Put Core DPLL in low power bypass */
 	omap4_enter_lowpower(cpu_id, PWRDM_POWER_OFF);
 	
@@ -160,6 +164,9 @@ static int omap4_pm_suspend(void)
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK,
 		OMAP4430_DPLL_CLKOUTHIF_GATE_CTRL_MASK,
 		OMAP4430_CM2_CKGEN_MOD,	OMAP4_CM_DIV_M3_DPLL_PER_OFFSET);
+
+	/* FIXME: Make USB OTG go back to Smart standby and smart idle */
+	omap_writel(0x2015, 0x4A0AB404);
 
 restore:
 	omap2_gpio_resume_after_idle(0);
