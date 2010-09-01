@@ -21,6 +21,7 @@
 
 #include <plat/powerdomain.h>
 #include <plat/clockdomain.h>
+#include <plat/serial.h>
 #include <mach/omap4-common.h>
 #include <mach/omap4-wakeupgen.h>
 
@@ -41,6 +42,13 @@ struct power_state {
 
 static LIST_HEAD(pwrst_list);
 static struct powerdomain *mpu_pwrdm;
+
+int omap4_can_sleep(void)
+{
+	if (!omap_uart_can_sleep())
+		return 0;
+	return 1;
+}
 
 /* This sets pwrdm state (other than mpu & core. Currently only ON &
  * RET are supported. Function is assuming that clkdm doesn't have
