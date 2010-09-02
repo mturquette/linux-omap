@@ -511,10 +511,12 @@ cpu_prepare:
 	 * secure devices, CPUx does WFI which can result in
 	 * domain transition
 	 */
-	if (wakeup_cpu)
+	if (wakeup_cpu) {
 		pwrdm_set_next_pwrst(cpu1_pwrdm, PWRDM_POWER_ON);
-	else
+	} else {
 		pwrdm_set_next_pwrst(cpu0_pwrdm, PWRDM_POWER_ON);
+		pwrdm_set_next_pwrst(mpuss_pd, PWRDM_POWER_ON);
+	}
 
 	/*
 	 * Check the CPUx previous power state
