@@ -198,11 +198,13 @@ static int i2c_device_pm_suspend(struct device *dev)
 	else
 		ret = i2c_legacy_suspend(dev, PMSG_SUSPEND);
 
+#if 0
 	if (!ret) {
 		pm_runtime_disable(dev);
 		pm_runtime_set_suspended(dev);
 		pm_runtime_enable(dev);
 	}
+#endif
 	return ret;
 }
 
@@ -216,12 +218,14 @@ static int i2c_device_pm_resume(struct device *dev)
 	else
 		ret = i2c_legacy_resume(dev);
 
+#if 0
 	if (!ret) {
 		pm_runtime_disable(dev);
 		pm_runtime_set_active(dev);
 		pm_runtime_enable(dev);
 	}
 
+#endif
 	return ret;
 }
 
