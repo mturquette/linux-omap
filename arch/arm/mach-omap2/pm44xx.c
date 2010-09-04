@@ -130,6 +130,9 @@ static irqreturn_t prcm_interrupt_handler (int irq, void *dev_id)
 
 	/* Check if a IO_ST interrupt */
 	if (irqstatus_mpu & OMAP4430_IO_ST_MASK) {
+		/* Re-enable UART3 */
+		omap_writel(0x2, 0x4A009550);
+		omap_writel(0xD, 0x48020054);
 		omap4_trigger_ioctrl();
 	}
 
@@ -174,6 +177,7 @@ static int omap4_pm_suspend(void)
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_UART3);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_KBD_CTL);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPT1);
+	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_PRCM);
 
 	/* Read current next_pwrsts */
 	list_for_each_entry(pwrst, &pwrst_list, node)
