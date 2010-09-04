@@ -146,6 +146,7 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 		omap_uart_prepare_idle(3);
 		omap2_gpio_prepare_for_idle(0);
 		set_pwrdm_state(core_pd, cx->core_state);
+		omap4_trigger_ioctrl();
 
 	}
 
