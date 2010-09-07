@@ -5800,6 +5800,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_dss_rfbi_hwmod,
 	&omap44xx_dss_venc_hwmod,
 #endif
+	&omap44xx_dsp_hwmod,
 	/* elm class */
 /*	&omap44xx_elm_hwmod, */
 	/* emif class */
@@ -5840,6 +5841,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_iva_seq1_hwmod,
 	/* kbd class */
 #endif
+	&omap44xx_iva_hwmod,
 	&omap44xx_kbd_hwmod,
 #if 0
 	/* mailbox class */
