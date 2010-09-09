@@ -157,7 +157,7 @@ static int omap_target(struct cpufreq_policy *policy,
 	return ret;
 }
 
-static int __init omap_cpu_init(struct cpufreq_policy *policy)
+static int omap_cpu_init(struct cpufreq_policy *policy)
 {
 	int result = 0;
 	if (cpu_is_omap44xx())
