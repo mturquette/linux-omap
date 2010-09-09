@@ -154,7 +154,7 @@ static inline unsigned long opp_get_rate(struct device *dev)
 }
 
 static inline void opp_populate_rate_fns(struct device *dev,
-		int (*set_rate)(struct device *dev, unsigned long rate)
+		int (*set_rate)(struct device *dev, unsigned long rate),
 		unsigned long (*get_rate) (struct device *dev))
 {
 	return;
