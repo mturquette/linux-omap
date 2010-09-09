@@ -32,6 +32,7 @@
 #include "opp44xx.h"
 
 static struct clk *dpll_mpu_clk, *iva_clk, *dsp_clk, *l3_clk;
+static struct clk *core_m3_clk, *core_m6_clk, *per_m3_clk, *per_m6_clk;
 
 static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	/* MPU OPP1 - OPP50 */
@@ -54,11 +55,35 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	OMAP_OPP_DEF("dsp", true, 465600000, 1100000),
 	/* DSP OPP3 - OPPTB */
 	OMAP_OPP_DEF("dsp", false, 498000000, 1260000),
+	/* ABE OPP1 - OPP50 */
+	OMAP_OPP_DEF("l4_abe", true, 98300000, 930000),
+	/* ABE OPP2 - OPP100 */
+	OMAP_OPP_DEF("l4_abe", true, 196600000, 1100000),
+	/* ABE OPP3 - OPPTB */
+	OMAP_OPP_DEF("l4_abe", false, 196600000, 1260000),
 	/* L3 OPP1 - OPP50 */
 	OMAP_OPP_DEF("l3_main_1", true, 100000000, 930000),
 	/* L3 OPP2 - OPP100, OPP-Turbo, OPP-SB */
 	OMAP_OPP_DEF("l3_main_1", true, 200000000, 1100000),
+	/* CAM FDIF OPP1 - OPP50 */
+	OMAP_OPP_DEF("fdif", true, 64000000, 930000),
+	/* CAM FDIF OPP2 - OPP100 */
+	OMAP_OPP_DEF("fdif", true, 128000000, 1100000),
+	/* SGX OPP1 - OPP50 */
+	OMAP_OPP_DEF("gpu", true, 100000000, 930000),
+	/* SGX OPP2 - OPP100 */
+	OMAP_OPP_DEF("gpu", true, 200000000, 1100000),
 };
+
+#define	L3_OPP50_RATE			100000000
+#define DPLL_CORE_M3_OPP50_RATE		100000000
+#define DPLL_CORE_M3_OPP100_RATE	160000000
+#define DPLL_CORE_M6_OPP50_RATE		100000000
+#define DPLL_CORE_M6_OPP100_RATE	133300000
+#define DPLL_PER_M3_OPP50_RATE		96000000
+#define DPLL_PER_M3_OPP100_RATE		128000000
+#define DPLL_PER_M6_OPP50_RATE		96000000
+#define DPLL_PER_M6_OPP100_RATE		192000000
 
 static u32 omap44xx_opp_def_size = ARRAY_SIZE(omap44xx_opp_def_list);
 
@@ -158,6 +183,25 @@ static unsigned long omap4_iva_get_rate(struct device *dev)
 
 static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 {
+	u32 d_core_m3_rate, d_core_m6_rate, d_per_m3_rate, d_per_m6_rate;
+
+	if (rate <= L3_OPP50_RATE) {
+		d_core_m3_rate = DPLL_CORE_M3_OPP50_RATE;
+		d_core_m6_rate = DPLL_CORE_M6_OPP50_RATE;
+		d_per_m3_rate = DPLL_PER_M3_OPP50_RATE;
+		d_per_m6_rate = DPLL_PER_M6_OPP50_RATE;
+	} else {
+		d_core_m3_rate = DPLL_CORE_M3_OPP100_RATE;
+		d_core_m6_rate = DPLL_CORE_M6_OPP100_RATE;
+		d_per_m3_rate = DPLL_PER_M3_OPP100_RATE;
+		d_per_m6_rate = DPLL_PER_M6_OPP100_RATE;
+	}
+
+	clk_set_rate(core_m3_clk, d_core_m3_rate);
+	d_core_m6_rate = clk_round_rate(core_m6_clk, d_core_m6_rate);
+	clk_set_rate(core_m6_clk, d_core_m6_rate);
+	clk_set_rate(per_m3_clk, d_per_m3_rate);
+	clk_set_rate(per_m6_clk, d_per_m6_rate);
 	return clk_set_rate(l3_clk, rate);
 }
 
@@ -168,7 +212,6 @@ static unsigned long omap4_l3_get_rate(struct device *dev)
 
 /* Temp variable to allow multiple calls */
 static u8 __initdata omap4_table_init;
-
 
 int __init omap4_pm_init_opp_table(void)
 {
@@ -197,6 +240,10 @@ int __init omap4_pm_init_opp_table(void)
 	iva_clk = clk_get(NULL, "dpll_iva_m5_ck");
 	dsp_clk = clk_get(NULL, "dpll_iva_m4_ck");
 	l3_clk = clk_get(NULL, "dpll_core_m5_ck");
+	core_m3_clk = clk_get(NULL, "dpll_core_m3_ck");
+	core_m6_clk = clk_get(NULL, "dpll_core_m6_ck");
+	per_m3_clk = clk_get(NULL, "dpll_per_m3_ck");
+	per_m6_clk = clk_get(NULL, "dpll_per_m6_ck");
 
 	/* Populate the set rate and get rate for mpu, iva, dsp and l3 device */
 	dev = omap2_get_mpuss_device();
