@@ -117,47 +117,22 @@ static struct dbs_tuners {
 	.powersave_bias = 0,
 };
 
-static inline cputime64_t get_cpu_idle_time_jiffy(unsigned int cpu,
-							cputime64_t *wall)
-{
-	cputime64_t idle_time;
-	cputime64_t cur_wall_time;
-	cputime64_t busy_time;
-
-	cur_wall_time = jiffies64_to_cputime64(get_jiffies_64());
-	busy_time = cputime64_add(kstat_cpu(cpu).cpustat.user,
-			kstat_cpu(cpu).cpustat.system);
-
-	busy_time = cputime64_add(busy_time, kstat_cpu(cpu).cpustat.irq);
-	busy_time = cputime64_add(busy_time, kstat_cpu(cpu).cpustat.softirq);
-	busy_time = cputime64_add(busy_time, kstat_cpu(cpu).cpustat.steal);
-	busy_time = cputime64_add(busy_time, kstat_cpu(cpu).cpustat.nice);
-
-	idle_time = cputime64_sub(cur_wall_time, busy_time);
-	if (wall)
-		*wall = (cputime64_t)jiffies_to_usecs(cur_wall_time);
-
-	return (cputime64_t)jiffies_to_usecs(idle_time);
-}
-
 static inline cputime64_t get_cpu_idle_time(unsigned int cpu, cputime64_t *wall)
 {
-	u64 idle_time = get_cpu_idle_time_us(cpu, wall);
+	u64 idle_time;
+	u64 iowait_time;
 
-	if (idle_time == -1ULL)
-		return get_cpu_idle_time_jiffy(cpu, wall);
+	/* cpufreq-hotplug always assumes CONFIG_NO_HZ */
+	idle_time = get_cpu_idle_time_us(cpu, wall);
+
+	if (dbs_tuners_ins.io_is_busy) {
+		iowait_time = get_cpu_iowait_time_us(cpu, wall);
+		/* cpufreq-hotplug always assumes CONFIG_NO_HZ */
+		if (iowait_time != -1ULL && idle_time >= iowait_time)
+			idle_time -= iowait_time;
+	}
 
 	return idle_time;
-}
-
-static inline cputime64_t get_cpu_iowait_time(unsigned int cpu, cputime64_t *wall)
-{
-	u64 iowait_time = get_cpu_iowait_time_us(cpu, wall);
-
-	if (iowait_time == -1ULL)
-		return 0;
-
-	return iowait_time;
 }
 
 /*
@@ -461,6 +436,7 @@ static struct attribute_group dbs_attr_group_old = {
 
 static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 {
+	pr_err("cpu is %d\n", hard_smp_processor_id());
 	unsigned int max_load_freq;
 
 	struct cpufreq_policy *policy;
@@ -484,11 +460,13 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* Get Absolute Load - in terms of freq */
 	max_load_freq = 0;
 
+	unsigned int load;
+
 	for_each_cpu(j, policy->cpus) {
 		struct cpu_dbs_info_s *j_dbs_info;
 		cputime64_t cur_wall_time, cur_idle_time, cur_iowait_time;
 		unsigned int idle_time, wall_time, iowait_time;
-		unsigned int load, load_freq;
+		unsigned int load_freq;
 		int freq_avg;
 
 		j_dbs_info = &per_cpu(od_cpu_dbs_info, j);
@@ -538,7 +516,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (unlikely(!wall_time || wall_time < idle_time))
 			continue;
 
-		load = 100 * (wall_time - idle_time) / wall_time;
+		load += 100 * (wall_time - idle_time) / wall_time;
 
 		freq_avg = __cpufreq_driver_getavg(policy, j);
 		if (freq_avg <= 0)
@@ -548,9 +526,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (load_freq > max_load_freq)
 			max_load_freq = load_freq;
 	}
-
+pr_err("cpu is %d, load is %d\n", hard_smp_processor_id(), load);
 	/* Check for frequency increase */
 	if (max_load_freq > dbs_tuners_ins.up_threshold * policy->cur) {
+#ifdef CONFIG_HOTPLUG_CPU
+		if (num_online_cpus() < 2) {
+			pr_err("enabling nonboot cpus\n");
+			//enable_nonboot_cpus();
+			return;
+		}
+#endif
 		/* if we are already at full speed then break out early */
 		if (!dbs_tuners_ins.powersave_bias) {
 			if (policy->cur == policy->max)
@@ -569,8 +554,19 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/* Check for frequency decrease */
 	/* if we cannot reduce the frequency anymore, break out early */
-	if (policy->cur == policy->min)
+	if (policy->cur == policy->min) {
+#ifdef CONFIG_HOTPLUG_CPU
+		int first_cpu, this_cpu;
+		first_cpu = cpumask_first(cpu_online_mask);
+		this_cpu = hard_smp_processor_id();
+		if (num_online_cpus() > 1 && this_cpu != first_cpu && load < 25) {
+			//disable_nonboot_cpus();
+			pr_err("disabling cpu %d\n", this_cpu);
+			cpu_down(hard_smp_processor_id());
+		}
+#endif
 		return;
+	}
 
 	/*
 	 * The optimal frequency is the frequency that is the lowest that

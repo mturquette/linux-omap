@@ -369,6 +369,9 @@ extern struct cpufreq_governor cpufreq_gov_ondemand;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_CONSERVATIVE)
 extern struct cpufreq_governor cpufreq_gov_conservative;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_conservative)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_HOTPLUG)
+extern struct cpufreq_governor cpufreq_gov_hotplug;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_hotplug)
 #endif
 
 
@@ -380,9 +383,9 @@ extern struct cpufreq_governor cpufreq_gov_conservative;
 #define CPUFREQ_TABLE_END     ~1
 
 struct cpufreq_frequency_table {
-	unsigned int	index;     /* any */
-	unsigned int	frequency; /* kHz - doesn't need to be in ascending
-				    * order */
+	unsigned int	index;		/* any */
+	unsigned int	frequency;	/* kHz - order doesn't matter here */
+	unsigned int	lpj;		/* cached loops per jiffy calculation */
 };
 
 int cpufreq_frequency_table_cpuinfo(struct cpufreq_policy *policy,
