@@ -1254,7 +1254,7 @@ static void cpufreq_out_of_sync(unsigned int cpu, unsigned int old_freq,
 {
 	struct cpufreq_freqs freqs;
 
-	dprintk("Warning: CPU frequency out of sync: cpufreq and timing "
+	pr_err("Warning: CPU frequency out of sync: cpufreq and timing "
 	       "core thinks of %u, is %u kHz.\n", old_freq, new_freq);
 
 	freqs.cpu = cpu;
