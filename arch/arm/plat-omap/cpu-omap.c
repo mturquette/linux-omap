@@ -147,6 +147,11 @@ static int omap_target(struct cpufreq_policy *policy,
 	 * cpufreq driver. So, update the per-CPU loops_per_jiffy value
 	 * on frequency transition. We need to update all dependent cpus
 	 */
+	/*
+	 * XXX put per-frequency lpj logic here; should reference the cpufreq
+	 * table directly.  if lpj value is NULL then program it as per the
+	 * code below.  Otherwise just use the cached value.
+	 */
 	freqs.new = omap_getspeed(policy->cpu);
 	for_each_cpu(i, policy->cpus)
 		per_cpu(cpu_data, i).loops_per_jiffy =
