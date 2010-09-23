@@ -344,6 +344,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		 */
 		/* bump down to the next lowest frequency in the table */
 		requested_freq = policy->cur - 1;
+		pr_err("policy is %p, this_dbs_info->freq_table is %p, requested_freq is %d, CPUFREQ_RELATION_H is %d, &index is %p\n",
+				policy, this_dbs_info->freq_table,
+				requested_freq, CPUFREQ_RELATION_H, &index);
 		cpufreq_frequency_table_target(policy,
 				this_dbs_info->freq_table, requested_freq,
 				CPUFREQ_RELATION_H, &index); requested_freq =
@@ -424,6 +427,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			}
 		}
 		this_dbs_info->cpu = cpu;
+		this_dbs_info->freq_table = cpufreq_frequency_get_table(cpu);
 		/*
 		 * Start the timerschedule work, when this governor
 		 * is used for first time
