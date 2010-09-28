@@ -189,7 +189,6 @@ extern int __cpufreq_driver_target(struct cpufreq_policy *policy,
 				   unsigned int target_freq,
 				   unsigned int relation);
 
-
 extern int __cpufreq_driver_getavg(struct cpufreq_policy *policy,
 				   unsigned int cpu);
 
@@ -412,6 +411,15 @@ void cpufreq_frequency_table_get_attr(struct cpufreq_frequency_table *table,
 				      unsigned int cpu);
 
 void cpufreq_frequency_table_put_attr(unsigned int cpu);
+
+/* the following are for use in governors, or anywhere else */
+extern int cpufreq_frequency_table_next_lowest(struct cpufreq_policy *policy,
+					struct cpufreq_frequency_table *table,
+					int *index);
+
+extern int cpufreq_frequency_table_next_highest(struct cpufreq_policy *policy,
+					struct cpufreq_frequency_table *table,
+					int *index);
 
 
 /*********************************************************************
