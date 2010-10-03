@@ -76,9 +76,11 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 	 * the AuxCoreBoot1 register is updated with cpu state
 	 * A barrier is added to ensure that write buffer is drained
 	 */
+	pr_err("%s: before omap_modify_auxcoreboot0\n", __func__);
 	omap_modify_auxcoreboot0(0x200, 0xfffffdff);
 	flush_cache_all();
 	smp_wmb();
+	pr_err("%s: after omap_modify_auxcoreboot0\n", __func__);
 
 	/*
 	 * SGI isn't wakeup capable from low power states. This is
@@ -113,8 +115,10 @@ static void __init wakeup_secondary(void)
 	 * on secondary core once out of WFE
 	 * A barrier is added to ensure that write buffer is drained
 	 */
+	pr_err("%s: before omap_auxcoreboot_addr\n", __func__);
 	omap_auxcoreboot_addr(virt_to_phys(omap_secondary_startup));
 	smp_wmb();
+	pr_err("%s: after omap_auxcoreboot_addr\n", __func__);
 
 	/*
 	 * Send a 'sev' to wake the secondary core from WFE.

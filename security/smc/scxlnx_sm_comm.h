@@ -28,6 +28,8 @@
 
 u32 pub2sec_bridge_entry(u32 appl_id, u32 proc_ID, u32 flag, u32 paNextArgs);
 u32 rpc_handler(u32 p1, u32 p2, u32 p3, u32 p4);
+u32 SEC_ENTRY_pub2sec_dispatcher(u32 appl_id, u32 proc_ID, u32 flag, u32
+		nArgs, u32 arg1, u32 arg2, u32 arg3, u32 arg4);
 
 extern void v7_flush_kern_cache_all(void);
 

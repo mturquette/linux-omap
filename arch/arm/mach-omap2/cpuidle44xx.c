@@ -25,7 +25,7 @@
 
 #ifdef CONFIG_CPU_IDLE
 
-#define OMAP4_MAX_STATES	5
+#define OMAP4_MAX_STATES	2
 
 /* C1 - CPUx wfi + MPU inactive + CORE inactive */
 #define OMAP4_STATE_C1		0
@@ -134,6 +134,11 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 #ifdef CONFIG_PM_DEBUG
 	pwrdm_pre_transition();
 #endif
+
+	/*pr_err("%s: mpu_logic_state is %d, mpu_state is %d, core_state is %d\n",
+			__func__, cx->mpu_logic_state, cx->mpu_state,
+			cx->core_state);*/
+
 	pwrdm_set_logic_retst(mpu_pd, cx->mpu_logic_state);
 	omap4_set_pwrdm_state(mpu_pd, cx->mpu_state);
 	omap4_set_pwrdm_state(core_pd, cx->core_state);
@@ -225,6 +230,7 @@ void omap_init_power_states(void)
 	omap4_power_states[OMAP4_STATE_C2].core_state = PWRDM_POWER_ON;
 	omap4_power_states[OMAP4_STATE_C2].flags = CPUIDLE_FLAG_TIME_VALID;
 
+#if 0
 	/*
 	 * C3 . CPU0 OFF + CPU1 OFF + MPU OSWR + CORE inactive
 	 */
@@ -282,6 +288,7 @@ void omap_init_power_states(void)
 	omap4_power_states[OMAP4_STATE_C5].core_state = PWRDM_POWER_RET;
 	omap4_power_states[OMAP4_STATE_C5].flags = CPUIDLE_FLAG_TIME_VALID
 						| CPUIDLE_FLAG_CHECK_BM;
+#endif
 }
 
 struct cpuidle_driver omap4_idle_driver = {

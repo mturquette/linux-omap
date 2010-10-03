@@ -32,6 +32,8 @@
 #include <asm/cacheflush.h>
 #include <asm/outercache.h>
 
+#include <plat/clockdomain.h>
+
 #include "scxlnx_defs.h"
 #include "scxlnx_sm_comm.h"
 #include "scxlnx_util.h"
@@ -200,28 +202,7 @@ struct NS_PA_INFO {
 static SCXLNX_SM_COMM_MONITOR *g_pSMComm;
 static bool g_L1SharedReady;
 
-
-/*
- * TODO: JCO: To be removed - temporary workaround
- *
- * TI Secure ROM Code requires this clock to be up and running but recent
- * releases of u-boot disable it. We need to enable it again when using ROM Code
- * APIs.
- *
- * This a known issue on TI side and it's been reported to the team in charge of
- * u-boot. This code should be removed once this is fixed.
- */
-#define ROMCODE_CLOCK_PHYS	0x4A009580
-
-static void set_romcode_clock(void)
-{
-	volatile uint32_t *clock_reg;
-
-	clock_reg = ioremap(ROMCODE_CLOCK_PHYS, SZ_1M);
-	*clock_reg = 0x2;
-	iounmap(clock_reg);
-}
-/* XXX */
+static struct clockdomain *l4_secure_clkdm;
 
 /*--------------------------------------------------------------------------
  *Function responsible for formatting the parameters to pass
@@ -230,6 +211,11 @@ static void set_romcode_clock(void)
 u32 SEC_ENTRY_pub2sec_dispatcher(u32 appl_id, u32 proc_ID, u32 flag, u32 nArgs,
 				u32 arg1, u32 arg2, u32 arg3, u32 arg4)
 {
+	if (!l4_secure_clkdm)
+		l4_secure_clkdm = clkdm_lookup("l4_secure_clkdm");
+
+	omap2_clkdm_wakeup(l4_secure_clkdm);
+
 #ifdef CONFIG_SMP
 	cpumask_t saved_cpu_mask;
 	cpumask_t local_cpu_mask = CPU_MASK_NONE;
@@ -242,8 +228,6 @@ u32 SEC_ENTRY_pub2sec_dispatcher(u32 appl_id, u32 proc_ID, u32 flag, u32 nArgs,
 		"SEC_ENTRY_pub2sec_dispatcher: \
 		ApplId=0x%x, ProcId=0x%x, flag=0x%x, args=%u\n",
 		appl_id, proc_ID, flag, nArgs);
-
-	set_romcode_clock();
 
 	/*
 	 *We need a physically contiguous buffer to pass parameters to the SE
@@ -284,6 +268,8 @@ u32 SEC_ENTRY_pub2sec_dispatcher(u32 appl_id, u32 proc_ID, u32 flag, u32 nArgs,
 
 	internal_vunmap(pArgs);
 	internal_kfree(pArgsRaw);
+
+	omap2_clkdm_allow_idle(l4_secure_clkdm);
 
 	return return_value;
 }

@@ -58,8 +58,10 @@ void platform_cpu_die(unsigned int cpu)
 	/*
 	 * we're ready for shutdown now, so do it
 	 */
+	pr_err("%s: before omap_modify_auxcoreboot0\n", __func__);
 	if (omap_modify_auxcoreboot0(0x0, 0x200) != 0x0)
 		pr_err("Secure clear status failed\n");
+	pr_err("%s: after omap_modify_auxcoreboot0\n", __func__);
 
 	for (;;) {
 		/*
@@ -73,6 +75,7 @@ void platform_cpu_die(unsigned int cpu)
 		wmb();
 		do_wfi();
 #endif
+		pr_err("%s: before omap_read_auxcoreboot0\n", __func__);
 		if (omap_read_auxcoreboot0() == cpu) {
 			/*
 			 * OK, proper wakeup, we're done
@@ -87,6 +90,7 @@ void platform_cpu_die(unsigned int cpu)
 			omap2_clkdm_allow_idle(cpu1_clkdm);
 			break;
 		}
+		pr_err("%s: after omap_read_auxcoreboot0\n", __func__);
 		pr_debug("CPU%u: spurious wakeup call\n", cpu);
 	}
 }

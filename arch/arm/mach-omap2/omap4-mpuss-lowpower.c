@@ -44,6 +44,8 @@
 #include <linux/smp.h>
 #include <linux/dma-mapping.h>
 
+#include "../../../security/smc/scxlnx_sm_comm.h"
+
 #include <asm/tlbflush.h>
 #include <asm/smp_scu.h>
 #include <asm/irq.h>
@@ -368,10 +370,14 @@ static inline void enable_gic_distributor(void)
  */
 static void save_gic_wakeupgen_secure(void)
 {
+	pr_err("%s: before SEC_ENTRY_pub2sec_dispatcher\n", __func__);
 	u32 ret;
-	ret = omap4_secure_dispatcher(HAL_SAVEGIC_INDEX,
-					FLAG_IRQFIQ_MASK | FLAG_START_CRITICAL,
-					0, 0, 0, 0, 0);
+
+	ret = SEC_ENTRY_pub2sec_dispatcher(HAL_SAVEGIC_INDEX, 0x0,
+			FLAG_IRQFIQ_MASK | FLAG_START_CRITICAL,
+			0, 0, 0, 0, 0);
+
+	pr_err("%s: before SEC_ENTRY_pub2sec_dispatcher\n", __func__);
 	if (ret)
 		pr_debug("GIC and Wakeupgen context save failed\n");
 }
@@ -382,19 +388,16 @@ static void save_gic_wakeupgen_secure(void)
  */
 static void save_secure_ram(void)
 {
+	pr_err("%s: before SEC_ENTRY_pub2sec_dispatcher\n", __func__);
 	u32 ret;
 
-	/* Put l4 secure to SW_WKUP so that moduels are accessible */
-	omap2_clkdm_wakeup(l4_secure_clkdm);
+	ret = SEC_ENTRY_pub2sec_dispatcher(HAL_SAVESECURERAM_INDEX, 0x0,
+			FLAG_IRQFIQ_MASK | FLAG_START_CRITICAL,
+			0, 0, 0, 0, 0);
 
-	ret = omap4_secure_dispatcher(HAL_SAVESECURERAM_INDEX,
-					FLAG_IRQFIQ_MASK | FLAG_START_CRITICAL,
-					1, omap4_secure_ram_phys, 0, 0, 0);
+	pr_err("%s: after SEC_ENTRY_pub2sec_dispatcher\n", __func__);
 	if (ret)
 		pr_debug("Secure ram context save failed\n");
-
-	/* Restore the HW_SUP so that module can idle */
-	omap2_clkdm_allow_idle(l4_secure_clkdm);
 }
 
 #ifdef CONFIG_LOCAL_TIMERS
@@ -516,6 +519,8 @@ void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 	 * Check MPUSS next state and save GIC if needed
 	 * GIC lost during MPU OFF and OSWR
 	 */
+	/*pr_err("%s: mpuss_pd next power state is %d\n",
+			__func__, pwrdm_read_next_pwrst(mpuss_pd));*/
 	switch (pwrdm_read_next_pwrst(mpuss_pd)) {
 	case PWRDM_POWER_ON:
 		/* No need to save MPUSS context */
@@ -524,12 +529,19 @@ void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 		/* MPUSS OSWR, logic lost */
 		if (pwrdm_read_logic_retst(mpuss_pd) == PWRDM_POWER_OFF) {
 			if (omap_type() != OMAP2_DEVICE_TYPE_GP) {
+				pr_err("%s: MPU OSWR on board type EMU/HS\n",
+						__func__);
 				save_gic_wakeupgen_secure();
 			} else {
+				pr_err("%s: MPU OSWR on board type GP\n",
+						__func__);
 				save_gic();
 				omap4_wakeupgen_save();
 			}
 			save_state = 2;
+		} else {
+			/*pr_err("%s: MPU CSWR, don't care about board type\n",
+					__func__);*/
 		}
 		break;
 	case PWRDM_POWER_OFF:
