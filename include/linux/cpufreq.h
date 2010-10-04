@@ -380,9 +380,9 @@ extern struct cpufreq_governor cpufreq_gov_conservative;
 #define CPUFREQ_TABLE_END     ~1
 
 struct cpufreq_frequency_table {
-	unsigned int	index;     /* any */
-	unsigned int	frequency; /* kHz - doesn't need to be in ascending
-				    * order */
+	unsigned int	index;		/* any */
+	unsigned int	frequency;	/* kHz - order doesn't matter here */
+	unsigned int	lpj;		/* cached loops per jiffy calculation */
 };
 
 int cpufreq_frequency_table_cpuinfo(struct cpufreq_policy *policy,
