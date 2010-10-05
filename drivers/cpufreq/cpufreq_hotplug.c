@@ -21,23 +21,29 @@
 #include <linux/ktime.h>
 #include <linux/sched.h>
 #include <linux/err.h>
+#include <linux/slab.h>
 
 /* greater than 80% avg load across a processor group increases frequency */
-#define DEF_UP_FREQ_MIN_LOAD			(80)
+#define DEFAULT_UP_FREQ_MIN_LOAD			(80)
 
 /* less than 20% avg load across a processor group decreases frequency */
-#define DEF_DOWN_FREQ_MAX_LOAD			(20)
+#define DEFAULT_DOWN_FREQ_MAX_LOAD			(20)
 
+#if 0
 /* plug-in auxillary cpus anytime freq increases */
-#define DEF_PLUG_IN_MIN_FREQ			(0)
+#define DEFAULT_PLUG_IN_MIN_FREQ			(0)
 
 /* plug-out auxillary cpus when at lowest frequency in the cpufreq table */
-#define DEF_PLUG_OUT_MAX_FREQ			(0)
+#define DEFAULT_PLUG_OUT_MAX_FREQ			(0)
+#endif
 
 /* default sampling period (uSec) is bogus; 10x ondemand's default for x86 */
-#define DEF_SAMPLING_PERIOD			(100000)
+#define DEFAULT_SAMPLING_PERIOD			(100000)
 
-static unsigned int min_sampling_rate;
+/* default number of sampling periods to average before hotplug decision */
+#define DEFAULT_HOTPLUG_SAMPLING_PERIODS		(20)
+
+//static unsigned int min_sampling_rate;
 static void do_dbs_timer(struct work_struct *work);
 static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				unsigned int event);
@@ -85,24 +91,33 @@ static struct dbs_tuners {
 	unsigned int sampling_rate;
 	unsigned int up_threshold;
 	unsigned int down_threshold;
+	unsigned int hotplug_sampling_periods;
+	unsigned int hotplug_load_index;
+	unsigned int *hotplug_load_history;
+#if 0
 	unsigned int plug_out_freq;
 	unsigned int plug_in_freq;
 	unsigned int plug_out_min_sampling_periods;
 	unsigned int plug_in_min_sampling_periods;
 	unsigned int num_plug_out_freq_periods;
 	unsigned int num_plug_in_freq_periods;
+#endif
 	unsigned int ignore_nice;
 	unsigned int io_is_busy;
 } dbs_tuners_ins = {
-	.sampling_rate = DEF_SAMPLING_PERIOD,
-	.up_threshold = DEF_UP_FREQ_MIN_LOAD,
-	.down_threshold = DEF_DOWN_FREQ_MAX_LOAD,
-	.plug_out_freq = DEF_PLUG_OUT_MAX_FREQ,
-	.plug_in_freq = DEF_PLUG_IN_MIN_FREQ,
+	.sampling_rate =		DEFAULT_SAMPLING_PERIOD,
+	.up_threshold =			DEFAULT_UP_FREQ_MIN_LOAD,
+	.down_threshold =		DEFAULT_DOWN_FREQ_MAX_LOAD,
+	.hotplug_sampling_periods =	DEFAULT_HOTPLUG_SAMPLING_PERIODS,
+	.hotplug_load_index =		0,
+#if 0
+	.plug_out_freq = DEFAULT_PLUG_OUT_MAX_FREQ,
+	.plug_in_freq = DEFAULT_PLUG_IN_MIN_FREQ,
 	.plug_out_min_sampling_periods = 0,
 	.plug_in_min_sampling_periods = 0,
 	.num_plug_out_freq_periods = 0,
 	.num_plug_in_freq_periods = 0,
+#endif
 	.ignore_nice = 0,
 	.io_is_busy = 0,
 };
@@ -147,10 +162,13 @@ static ssize_t show_##file_name						\
 show_one(sampling_rate, sampling_rate);
 show_one(up_threshold, up_threshold);
 show_one(down_threshold, down_threshold);
+show_one(hotplug_sampling_periods, hotplug_sampling_periods);
+#if 0
 show_one(plug_out_freq, plug_out_freq);
 show_one(plug_in_freq, plug_in_freq);
 show_one(plug_out_min_sampling_periods, plug_out_min_sampling_periods);
 show_one(plug_in_min_sampling_periods, plug_in_min_sampling_periods);
+#endif
 show_one(ignore_nice_load, ignore_nice);
 show_one(io_is_busy, io_is_busy);
 
@@ -206,6 +224,42 @@ static ssize_t store_down_threshold(struct kobject *a, struct attribute *b,
 	return count;
 }
 
+static ssize_t store_hotplug_sampling_periods(struct kobject *a,
+		struct attribute *b, const char *buf, size_t count)
+{
+	unsigned int input;
+	unsigned int *temp;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+
+	if (ret != 1) {
+		return -EINVAL;
+	}
+
+	if (input == dbs_tuners_ins.hotplug_sampling_periods)
+		return count;
+
+	mutex_lock(&dbs_mutex);
+	ret = 0;
+
+	temp = kmalloc((sizeof(unsigned int) * input), GFP_KERNEL);
+	
+	if (!temp || IS_ERR(temp))
+		ret = -ENOMEM;
+	else {
+		kfree(dbs_tuners_ins.hotplug_load_history);
+		dbs_tuners_ins.hotplug_load_history = temp;
+		dbs_tuners_ins.hotplug_sampling_periods = input;
+	}
+	mutex_unlock(&dbs_mutex);
+
+	if (ret)
+		return -ENOMEM;
+
+	return count;
+}
+
+#if 0
 static ssize_t store_plug_out_freq(struct kobject *a, struct attribute *b,
 				  const char *buf, size_t count)
 {
@@ -273,6 +327,7 @@ static ssize_t store_plug_in_min_sampling_periods(struct kobject *a, struct
 
 	return count;
 }
+#endif
 
 static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b,
 				      const char *buf, size_t count)
@@ -331,10 +386,13 @@ static ssize_t store_io_is_busy(struct kobject *a, struct attribute *b,
 define_one_global_rw(sampling_rate);
 define_one_global_rw(up_threshold);
 define_one_global_rw(down_threshold);
+define_one_global_rw(hotplug_sampling_periods);
+#if 0
 define_one_global_rw(plug_out_freq);
 define_one_global_rw(plug_in_freq);
 define_one_global_rw(plug_out_min_sampling_periods);
 define_one_global_rw(plug_in_min_sampling_periods);
+#endif
 define_one_global_rw(ignore_nice_load);
 define_one_global_rw(io_is_busy);
 
@@ -345,10 +403,13 @@ static struct attribute *dbs_attributes[] = {
 	&sampling_rate.attr,
 	&up_threshold.attr,
 	&down_threshold.attr,
+	&hotplug_sampling_periods.attr,
+#if 0
 	&plug_out_freq.attr,
 	&plug_in_freq.attr,
 	&plug_out_min_sampling_periods.attr,
 	&plug_in_min_sampling_periods.attr,
+#endif
 	&ignore_nice_load.attr,
 	&io_is_busy.attr,
 	NULL
@@ -369,9 +430,11 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int max_load = 0;
 	/* average load across enabled CPUs */
 	unsigned int avg_load = 0;
+	/* average load across multiple sampling periods for hotplug events */
+	unsigned int hotplug_avg_load = 0;
 
 	unsigned int index = 0;
-	unsigned int requested_freq = 0;
+	//unsigned int requested_freq = 0;
 
 	struct cpufreq_policy *policy;
 	unsigned int j;
@@ -383,7 +446,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 * cpu groups are CPUs that are related
 	 */
 
-	/* get highest load and total load across the CPUs */
+	/* get highest load and total load across related CPUs */
 	for_each_cpu(j, policy->cpus) {
 		unsigned int load;
 		unsigned int idle_time, wall_time;
@@ -428,6 +491,27 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	pr_err("avg_load is %d, max_load is %d\n",
 			avg_load, max_load);
 
+	/* increment the index of the circular buffer and store avg_load */
+	dbs_tuners_ins.hotplug_load_history[dbs_tuners_ins.hotplug_load_index++]
+		= avg_load;
+
+	/* return to first element if we're at the circular buffer's end */
+	if (dbs_tuners_ins.hotplug_load_index ==
+			dbs_tuners_ins.hotplug_sampling_periods)
+		dbs_tuners_ins.hotplug_load_index = 0;
+
+	/* compute average load across the larger sampling period */
+	for (j = 0; j < dbs_tuners_ins.hotplug_sampling_periods; j++)
+		hotplug_avg_load += dbs_tuners_ins.hotplug_load_history[j];
+
+	hotplug_avg_load = hotplug_avg_load /
+		dbs_tuners_ins.hotplug_sampling_periods;
+
+	pr_err("hotplug_avg_load is %d, hotplug_sampling_periods is %d\n",
+			hotplug_avg_load,
+			dbs_tuners_ins.hotplug_sampling_periods);
+
+#if 0
 	/* update the number of periods at or above plug_in_freq */
 	if (!dbs_tuners_ins.plug_in_freq ||
 			policy->cur >= dbs_tuners_ins.plug_in_freq)
@@ -441,9 +525,18 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		dbs_tuners_ins.num_plug_out_freq_periods++;
 	else
 		dbs_tuners_ins.num_plug_out_freq_periods = 0;
+#endif
 
 	/* check for frequency increase */
 	if (avg_load > dbs_tuners_ins.up_threshold) {
+		/* should we enable auxillary CPUs? */
+		if (num_online_cpus() < 2 && hotplug_avg_load >
+				dbs_tuners_ins.up_threshold) {
+			enable_nonboot_cpus();
+			return;
+		}
+
+#if 0
 		/* enable auxillary CPUs if all requirements met */
 		if ((num_online_cpus() < 2) &&
 		    (dbs_tuners_ins.num_plug_in_freq_periods >=
@@ -453,6 +546,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			enable_nonboot_cpus();
 			return;
 		}
+#endif
 
 		/* increase to highest frequency supported */
 		if (policy->cur < policy->max)
@@ -464,6 +558,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	/* check for frequency decrease */
 	if (avg_load < dbs_tuners_ins.down_threshold) {
+#if 0
 		/* disable auxillary CPUs if all requirements met */
 		if ((num_online_cpus() > 1) &&
 		    (dbs_tuners_ins.num_plug_out_freq_periods >=
@@ -473,10 +568,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			disable_nonboot_cpus();
 			return;
 		}
-
-		/* at minimum frequency already, bail out */
-		if (policy->cur == policy->min)
+#endif
+		/* are we at the minimum frequency already? */
+		if (policy->cur == policy->min) {
+			/* should we disable auxillary CPUs? */
+			if (num_online_cpus() > 1 && hotplug_avg_load <
+					dbs_tuners_ins.down_threshold) {
+				disable_nonboot_cpus();
+			}
 			return;
+		}
 
 		/*
 		 * XXX would be nice to have next_highest, next_lowest accesor
@@ -512,7 +613,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		  CPUFREQ_RELATION_H);*/
 
 		if (cpufreq_frequency_table_next_lowest(policy,
-				this_dbs_info->freq_table, &index)) {
+					this_dbs_info->freq_table, &index)) {
 			pr_err("%s: failed to get next lowest frequency\n",
 					__func__);
 			return;
@@ -530,7 +631,7 @@ static void do_dbs_timer(struct work_struct *work)
 		container_of(work, struct cpu_dbs_info_s, work.work);
 	unsigned int cpu = dbs_info->cpu;
 
-	/* We want all CPU groups to do sampling nearly on same jiffy */
+	/* We want all related CPUs to do sampling nearly on same jiffy */
 	int delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
 	delay -= jiffies % delay;
 
@@ -542,7 +643,7 @@ static void do_dbs_timer(struct work_struct *work)
 
 static inline void dbs_timer_init(struct cpu_dbs_info_s *dbs_info)
 {
-	/* We want all CPU groups to do sampling nearly on same jiffy */
+	/* We want all related CPUs to do sampling nearly on same jiffy */
 	int delay = usecs_to_jiffies(dbs_tuners_ins.sampling_rate);
 	delay -= jiffies % delay;
 
@@ -591,6 +692,13 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 				j_dbs_info->prev_cpu_nice =
 						kstat_cpu(j).cpustat.nice;
 			}
+			dbs_tuners_ins.hotplug_load_history = kmalloc(
+					(sizeof(unsigned int) *
+					 DEFAULT_HOTPLUG_SAMPLING_PERIODS),
+					GFP_KERNEL);
+			memset(dbs_tuners_ins.hotplug_load_history, 0,
+					(sizeof(unsigned int) *
+					 DEFAULT_HOTPLUG_SAMPLING_PERIODS));
 		}
 		this_dbs_info->cpu = cpu;
 		this_dbs_info->freq_table = cpufreq_frequency_get_table(cpu);
@@ -661,7 +769,7 @@ static int __init cpufreq_gov_dbs_init(void)
 	idle_time = get_cpu_idle_time_us(cpu, &wall);
 	put_cpu();
 	if (idle_time != -1ULL) {
-		dbs_tuners_ins.up_threshold = DEF_UP_FREQ_MIN_LOAD;
+		dbs_tuners_ins.up_threshold = DEFAULT_UP_FREQ_MIN_LOAD;
 	} else {
 		pr_warn("cpufreq-hotplug: %s: assumes CONFIG_NO_HZ\n",
 				__func__);
