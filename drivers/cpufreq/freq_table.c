@@ -204,7 +204,7 @@ int cpufreq_frequency_table_next_lowest(struct cpufreq_policy *policy,
 		if (table[i].frequency < cur_freq &&
 				table[i].frequency > next_lowest_freq) {
 			next_lowest_freq = table[i].frequency;
-			optimal_index = i;
+			optimal_index = table[i].index;
 		}
 
 		i++;
@@ -245,7 +245,7 @@ int cpufreq_frequency_table_next_highest(struct cpufreq_policy *policy,
 		if (table[i].frequency > cur_freq &&
 				table[i].frequency < next_highest_freq) {
 			next_highest_freq = table[i].frequency;
-			optimal_index = i;
+			optimal_index = table[i].index;
 		}
 
 		i++;
