@@ -696,7 +696,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 					(sizeof(unsigned int) *
 					 DEFAULT_HOTPLUG_SAMPLING_PERIODS),
 					GFP_KERNEL);
-			memset(dbs_tuners_ins.hotplug_load_history, 0,
+			memset(dbs_tuners_ins.hotplug_load_history, 50,
 					(sizeof(unsigned int) *
 					 DEFAULT_HOTPLUG_SAMPLING_PERIODS));
 		}
