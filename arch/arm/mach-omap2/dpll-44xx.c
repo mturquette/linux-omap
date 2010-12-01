@@ -17,6 +17,7 @@
 
 #include <plat/common.h>
 #include <plat/clockdomain.h>
+#include <plat/prcm.h>
 
 #include <mach/emif.h>
 #include <mach/omap4-common.h>
@@ -24,8 +25,10 @@
 #include "clock.h"
 #include "cm.h"
 #include "cm-regbits-44xx.h"
+#include "prm-regbits-44xx.h"
 
 #define MAX_FREQ_UPDATE_TIMEOUT  100000
+#define DPLL_ABE_CLKSEL_SYS_32K	0x1
 #define DPLL_REGM4XEN_ENABLE	0x1
 
 static struct clockdomain *l3_emif_clkdm;
@@ -207,4 +210,101 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 
 out:
 	return clk->dpll_data->last_rounded_rate;
+}
+
+int omap4_dpll_low_power_cascade_enter()
+{
+	int ret = 0;
+	struct clk *dpll_abe_ck, *dpll_core_ck, dpll_mpu_ck;
+	struct clk *sys_32k_ck;
+	struct clk *abe_clk, *abe_dpll_refclk_mux_ck;
+	unsigned long clk_rate;
+
+	/*
+	 * Reparent DPLL_ABE so that it is fed by SYS_32K_CK.  Magical
+	 * REGM4XEN registers allows us to multiply MN dividers by 4 so that
+	 * we can get 196.608MHz out of DPLL_ABE (other DPLLs do not have this
+	 * feature).  Divide the output of that clock by 4 so that AESS
+	 * functional clock can be 48.152MHz.
+	 */
+
+	pr_err("%s\n", __func__);
+
+	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
+	if (!dpll_abe_ck)
+		pr_err("%s: could not get dpll_abe_ck\n", __func__);
+
+	sys_32k_ck = clk_get(NULL, "sys_32k_ck");
+	if (!sys_32k_ck)
+		pr_err("%s: could not get sys_32k_ck\n", __func__);
+
+	abe_clk = clk_get(NULL, "abe_clk");
+	if (!abe_clk)
+		pr_err("%s: could not get abe_clk\n", __func__);
+
+	abe_dpll_refclk_mux_ck = clk_get(NULL, "abe_dpll_refclk_mux_ck");
+	if (!abe_dpll_refclk_mux_ck)
+		pr_err("%s: could not get abe_dpll_refclk_mux_ck\n", __func__);
+
+	/* Device RET/OFF are not supported in DPLL cascading; gate them */
+	omap3_dpll_deny_idle(dpll_abe_ck);
+
+	/* should I bypass DPLL_ABE here? */
+
+	/* set SYS_32K_CK as input to DPLL_ABE */
+	/* the right way to switch to 32k clk */
+	ret = omap2_clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
+
+	pr_err("%s: omap2_clk_set_parent returns %d\n", __func__, ret);
+
+	/* the hacky way to switch to 32k clk */
+	/*omap4_prm_rmw_reg_bits(OMAP4430_DPLL_ABE_CLKSEL_MASK,
+			DPLL_ABE_CLKSEL_SYS_32K,
+			OMAP4430_CM_ABE_PLL_REF_CLKSEL);*/
+
+	/* multiply MN dividers by 4; only supported by DPLL_ABE */
+	/* should this be done while bypassed? what is the proper sequence? */
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
+			DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT,
+			OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
+	/* program DPLL_ABE for 196.608MHz */
+	/*
+	 * XXX this should use the new omap4_dpll_regm4xen_round_rate and
+	 * relock it
+	 */
+	clk_set_rate(dpll_abe_ck, 196608000);
+
+	/* enable DPLL_ABE if not done already */
+	clk_enable(dpll_abe_ck);
+
+	pr_err("%s: clk_get_rate(dpll_abe_ck) is %lu\n",
+			__func__, clk_get_rate(dpll_abe_ck));
+
+	/* XXX below code is not yet ready */
+#if 0
+
+	/* divide 196.608MHz by 4 to get for AESS clock */
+	clk_set_rate(abe_clk, 49152000);
+
+	/* check if CLKSEL_OPP is 0x2 */
+	if(!(cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+					OMAP4_CM_CLKSEL_ABE_OFFSET) && 0x2)) {
+		pr_err("%s: CKGEN_CM1.CM_CLKSEL_ABB.CLKSEL_OPP is not 0x2\n",
+				__func__);
+		ret = -EINVAL;
+		goto out_clksel_opp;
+	}
+#endif
+
+out_clksel_opp:
+out:
+	return ret;
+}
+
+int omap4_dpll_low_power_cascade_exit()
+{
+	pr_err("%s\n", __func__);
+	return 0;
 }

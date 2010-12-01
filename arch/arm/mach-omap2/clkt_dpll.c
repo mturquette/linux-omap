@@ -323,11 +323,16 @@ long omap2_dpll_round_rate(struct clk *clk, unsigned long target_rate)
 	for (n = dd->min_divider; n <= dd->max_divider; n++) {
 
 		/* Is the (input clk, divider) pair valid for the DPLL? */
-		r = _dpll_test_fint(clk, n);
+		/*
+		 * XXX this test always fails on the first try if I pass in
+		 * small target_rate values like 24MHz.  I pass in small
+		 * values IFF REGM4XEN is enabled.
+		 */
+		/*r = _dpll_test_fint(clk, n);
 		if (r == DPLL_FINT_UNDERFLOW)
 			break;
 		else if (r == DPLL_FINT_INVALID)
-			continue;
+			continue;*/
 
 		/* Compute the scaled DPLL multiplier, based on the divider */
 		m = scaled_rt_rp * n;
