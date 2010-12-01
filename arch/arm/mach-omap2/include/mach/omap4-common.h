@@ -81,6 +81,8 @@ extern void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state);
 extern void __omap4_cpu_suspend(unsigned int cpu, unsigned int save_state);
 extern unsigned long *omap4_cpu_wakeup_addr(void);
 extern int omap4_set_freq_update(void);
+extern int omap4_dpll_low_power_cascade_enter(void);
+extern int omap4_dpll_low_power_cascade_exit(void);
 
 #endif
 

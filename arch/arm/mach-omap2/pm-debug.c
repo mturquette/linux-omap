@@ -34,6 +34,8 @@
 #include <plat/voltage.h>
 #include <plat/dmtimer.h>
 
+#include <mach/omap4-common.h>
+
 #include "prm.h"
 #include "cm.h"
 #include "pm.h"
@@ -43,6 +45,7 @@ u32 enable_off_mode;
 u32 sleep_while_idle;
 u32 wakeup_timer_seconds;
 u32 wakeup_timer_milliseconds;
+int dpll_cascade_global_state;
 
 #define DUMP_PRM_MOD_REG(mod, reg)    \
 	regs[reg_count].name = #mod "." #reg; \
@@ -650,6 +653,39 @@ static int option_set(void *data, u64 val)
 
 DEFINE_SIMPLE_ATTRIBUTE(pm_dbg_option_fops, option_get, option_set, "%llu\n");
 
+static int dpll_cascading_set(void *data, u64 val)
+{
+	int *option = data;
+
+	if (option != &dpll_cascade_global_state)
+		return -EINVAL;
+
+	if (*option == 0 && val == 1) {
+		*option = val;
+		omap4_dpll_low_power_cascade_enter();
+	} else if (*option == 1 && val == 0) {
+		omap4_dpll_low_power_cascade_exit();
+		*option = val;
+	}
+
+	return 0;
+}
+
+static int dpll_cascading_get(void *data, u64 *val)
+{
+	int *option = data;
+
+	if (option != &dpll_cascade_global_state)
+		return -EINVAL;
+
+	*val = *option;
+
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(pm_debug_dpll_cascading_fops, dpll_cascading_get,
+		dpll_cascading_set, "%llu\n");
+
 static int __init pm_dbg_init(void)
 {
 	int i;
@@ -703,6 +739,11 @@ static int __init pm_dbg_init(void)
 			&pm_dbg_option_fops);
 	(void) debugfs_create_file("enable_sr_vp_debug",  S_IRUGO | S_IWUGO, d,
 				   &enable_sr_vp_debug, &pm_dbg_option_fops);
+
+	debugfs_create_file("dpll_cascade_enable", S_IRUGO|S_IWUGO, d,
+			&dpll_cascade_global_state,
+			&pm_debug_dpll_cascading_fops);
+
 	pm_dbg_main_dir = d;
 	pm_dbg_init_done = 1;
 
