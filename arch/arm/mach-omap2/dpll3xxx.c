@@ -431,6 +431,7 @@ int omap3_noncore_dpll_set_rate(struct clk *clk, unsigned long rate)
 	omap2_clk_enable(dd->clk_bypass);
 	omap2_clk_enable(dd->clk_ref);
 
+	/* XXX maybe need to add DPLL_MN_BYPASS below... */
 	if (dd->clk_bypass->rate == rate &&
 	    (clk->dpll_data->modes & (1 << DPLL_LOW_POWER_BYPASS))) {
 		pr_debug("clock: %s: set rate: entering bypass.\n", clk->name);
@@ -472,6 +473,8 @@ int omap3_noncore_dpll_set_rate(struct clk *clk, unsigned long rate)
 			omap2_clk_enable(new_parent);
 			omap2_clk_disable(clk->parent);
 		}
+		pr_err("%s: reparenting %s to %s, and setting old rate %lu to new rate %lu\n",
+				__func__, clk->name, new_parent->name, clk->rate, rate);
 		clk_reparent(clk, new_parent);
 		clk->rate = rate;
 	}
