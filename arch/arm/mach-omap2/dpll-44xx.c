@@ -26,6 +26,7 @@
 #include "cm-regbits-44xx.h"
 
 #define MAX_FREQ_UPDATE_TIMEOUT  100000
+#define DPLL_REGM4XEN_ENABLE	0x1
 
 static struct clockdomain *l3_emif_clkdm;
 
@@ -148,4 +149,47 @@ int omap4_set_freq_update(void)
 	}
 
 	return 0;
+}
+
+long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
+{
+	long ret;
+	u32 reg;
+	struct dpll_data *dd;
+
+	dd = clk->dpll_data;
+
+	omap2_dpll_round_rate(clk, target_rate);
+
+	/* regm4xen adds a multiplier of 4 to DPLL calculations */
+	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+	if (reg & (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT)) {
+		/*
+		 * FIXME this is lazy; we only support values of M that are
+		 * divisible by 4 (a safe bet) and for which M/4 is >= 2
+		 */
+		if (dd->last_rounded_m % OMAP4430_REGM4XEN_MULT)
+			pr_warn("%s: %s's M (%u) is not divisible by 4\n",
+					__func__, clk->name, dd->last_rounded_m);
+
+		if ((dd->last_rounded_m / OMAP4430_REGM4XEN_MULT) < 2)
+			pr_warn("%s: %s's M (%u) is too low.  Try disabling REGM4XEN for this frequency\n",
+					__func__, clk->name, dd->last_rounded_m);
+
+		dd->last_rounded_m /= OMAP4430_REGM4XEN_MULT;
+	}
+
+out:
+	pr_debug("%s: last_rounded_m is %d, last_rounded_n is %d, last_rounded_rate is %lu\n",
+			__func__, clk->dpll_data->last_rounded_m,
+			clk->dpll_data->last_rounded_n,
+			clk->dpll_data->last_rounded_rate);
+
+	clk->dpll_data->last_rounded_rate *= regm4xen;
+	pr_err("%s: last_rounded_rate hacked to become %lu\n", __func__,
+			clk->dpll_data->last_rounded_rate);
+
+out:
+	return clk->dpll_data->last_rounded_rate;
 }
