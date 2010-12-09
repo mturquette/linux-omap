@@ -184,7 +184,7 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 		 * come out correctly when determining what the rate is.  Why
 		 * is that?
 		 */
-		regm4xen = 8;
+		regm4xen = 4;
 	}
 
 	/*
