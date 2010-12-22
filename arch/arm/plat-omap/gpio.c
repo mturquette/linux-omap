@@ -2096,12 +2096,6 @@ void omap2_gpio_prepare_for_idle(bool save_context)
 		struct gpio_bank *bank = &gpio_bank[i];
 		struct platform_device *pdev = to_platform_device(bank->dev);
 
-		/*
-		 * Only if the device is used & if it supports off-mode,
-		 * prepare for idle.
-		 */
-		if ((!bank->off_mode_support) || (!bank->mod_usage))
-			continue;
 		gpio_bank_runtime_suspend(bank->dev);
 		if (save_context)
 			omap_gpio_save_context(bank->dev);
@@ -2117,13 +2111,11 @@ void omap2_gpio_resume_after_idle(bool restore_context)
 
 	for (i = 0; i < gpio_bank_count; i++) {
 		struct gpio_bank *bank = &gpio_bank[i];
-		if ((bank->off_mode_support) && (bank->mod_usage)) {
-			struct platform_device *pdev = to_platform_device(bank->dev);
-			omap_device_enable(pdev);
-			if (restore_context)
-				omap_gpio_restore_context(bank->dev);
-			gpio_bank_runtime_resume(bank->dev);
-		}
+		struct platform_device *pdev = to_platform_device(bank->dev);
+		omap_device_enable(pdev);
+		if (restore_context)
+			omap_gpio_restore_context(bank->dev);
+		gpio_bank_runtime_resume(bank->dev);
 	}
 
 	workaround_enabled = 0;
