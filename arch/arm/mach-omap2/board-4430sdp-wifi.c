@@ -27,12 +27,20 @@
 #include <asm/io.h>
 #include <linux/wifi_tiwlan.h>
 
+#include "mux.h"
+
 #define SDP4430_WIFI_PMENA_GPIO	 54
 #define SDP4430_WIFI_IRQ_GPIO	 53
 
 static int sdp4430_wifi_cd;		/* WIFI virtual 'card detect' status */
 static void (*wifi_status_cb)(int card_present, void *dev_id);
 static void *wifi_status_cb_devid;
+
+void omap_wifi_mux_init(void) {
+	/* primary interrupt from WiLink chip to OMAP */
+	omap_mux_init_gpio(53, (OMAP_PULL_ENA | OMAP_PULL_UP |
+				OMAP_WAKEUP_EN | OMAP_INPUT_EN));
+}
 
 int omap_wifi_status_register(void (*callback)(int card_present,
 						void *dev_id), void *dev_id)
@@ -120,6 +128,7 @@ static int __init sdp4430_wifi_init(void)
 {
 	int ret;
 
+	omap_wifi_mux_init();
 	printk(KERN_WARNING"%s: start\n", __func__);
 	ret = gpio_request(SDP4430_WIFI_IRQ_GPIO, "wifi_irq");
 	if (ret < 0) {
