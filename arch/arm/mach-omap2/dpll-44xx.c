@@ -169,23 +169,8 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 	/* regm4xen adds a multiplier of 4 to DPLL calculations */
 	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-	if (reg && (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT)) {
-#if 0
-		/* begin: gross hack to force MN dividers */
-		pr_err("%s: GROSS HACK\n", __func__);
-		clk->dpll_data->last_rounded_m = 0x1e;
-		clk->dpll_data->last_rounded_n = 0x18;
-		clk->dpll_data->last_rounded_rate = 196608000;
-		goto out;
-		/* end: gross hack to force MN dividers */
-#endif
-		/*
-		 * This should be 4 but I have to make this 8 for the math to
-		 * come out correctly when determining what the rate is.  Why
-		 * is that?
-		 */
+	if (reg && (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT))
 		regm4xen = 4;
-	}
 
 	/*
 	 * XXX this is lazy.  sue me.
@@ -204,7 +189,7 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 			clk->dpll_data->last_rounded_n,
 			clk->dpll_data->last_rounded_rate);
 
-	clk->dpll_data->last_rounded_rate *= 8;
+	clk->dpll_data->last_rounded_rate *= regm4xen;
 	pr_err("%s: last_rounded_rate hacked to become %lu\n", __func__,
 			clk->dpll_data->last_rounded_rate);
 
