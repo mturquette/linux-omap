@@ -33,6 +33,18 @@
 
 static struct clockdomain *l3_emif_clkdm;
 
+static struct dpll_cascade_saved_state {
+	struct clk *dpll_abe_parent;
+	u32 dpll_abe_rate;
+	struct clk *dpll_core_parent;
+	u32 dpll_core_rate;
+	struct clk *dpll_mpu_parent;
+	u32 dpll_mpu_rate;
+	struct clk *dpll_iva_parent;
+	u32 dpll_iva_rate;
+	struct clk *abe_dpll_refclk_mux_ck_parent;
+} state;
+
 /**
  * omap4_core_dpll_m2_set_rate - set CORE DPLL M2 divider
  * @clk: struct clk * of DPLL to set
@@ -199,9 +211,10 @@ out:
 
 int omap4_dpll_low_power_cascade_enter()
 {
-	int ret = 0;
+	u32 ret = 0;
+	int i;
 	struct clk *dpll_abe_ck, *dpll_core_ck, dpll_mpu_ck;
-	struct clk *sys_32k_ck;
+	struct clk *sys_32k_ck, *sys_clkin_ck;
 	struct clk *abe_clk, *abe_dpll_refclk_mux_ck;
 	unsigned long clk_rate;
 
@@ -223,6 +236,10 @@ int omap4_dpll_low_power_cascade_enter()
 	if (!sys_32k_ck)
 		pr_err("%s: could not get sys_32k_ck\n", __func__);
 
+	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
+	if (!sys_clkin_ck)
+		pr_err("%s: could not get sys_clkin_ck\n", __func__);
+
 	abe_clk = clk_get(NULL, "abe_clk");
 	if (!abe_clk)
 		pr_err("%s: could not get abe_clk\n", __func__);
@@ -234,27 +251,71 @@ int omap4_dpll_low_power_cascade_enter()
 	/* Device RET/OFF are not supported in DPLL cascading; gate them */
 	omap3_dpll_deny_idle(dpll_abe_ck);
 
-	/* should I bypass DPLL_ABE here? */
+	/* bypass DPLL_ABE */
+	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
+	/* XXX is it OK if I don't use MN bypass here? */
+	omap3_noncore_dpll_set_rate(dpll_abe_ck, dpll_abe_ck->parent->rate);
+	//clk_enable(dpll_abe_ck);
+
+	/* verify DPLL_ABE is bypassed */
+	for (i = 0; i < 10000; i++) {
+		ret = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+				OMAP4_CM_IDLEST_DPLL_ABE_OFFSET);
+		if (!ret)
+			break;
+	}
+
+	if (ret) {
+		pr_err("%s: DPLL_ABE does not enter bypass\n", __func__);
+		goto dpll_abe_bypass_fail;
+	} else
+		pr_err("%s: DPLL_ABE bypassed after %d loops\n", __func__, i);
 
 	/* set SYS_32K_CK as input to DPLL_ABE */
-	/* the right way to switch to 32k clk */
-	ret = omap2_clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
+	state.abe_dpll_refclk_mux_ck_parent =
+		clk_get_parent(abe_dpll_refclk_mux_ck);
+	//ret = omap2_clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
+	ret = clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
 
-	pr_err("%s: omap2_clk_set_parent returns %d\n", __func__, ret);
+	if (ret) {
+		pr_err("%s: clk_get_parent returns %d\n", __func__, ret);
+		goto dpll_abe_reparent_fail;
+	}
 
-	/* the hacky way to switch to 32k clk */
-	/*omap4_prm_rmw_reg_bits(OMAP4430_DPLL_ABE_CLKSEL_MASK,
-			DPLL_ABE_CLKSEL_SYS_32K,
-			OMAP4430_CM_ABE_PLL_REF_CLKSEL);*/
+	/* program DPLL_ABE for 196.608MHz */
 
-	/* multiply MN dividers by 4; only supported by DPLL_ABE */
-	/* should this be done while bypassed? what is the proper sequence? */
+	/* set DPLL_ABE REGM4XEN bit */
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
 			DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT,
 			OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
 
-	/* program DPLL_ABE for 196.608MHz */
+	/* ABE DPLL LP Mode Enable */
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_LPMODE_EN_MASK,
+			0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT,
+			OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
+	/* ABE DPLL Relock Ramp Enable */
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_RELOCK_RAMP_EN_MASK,
+			0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT,
+			OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
+	/* ABE DPLL Ramp Rate */
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_RAMP_RATE_MASK,
+			0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT,
+			OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
+	/* no DPLL_ABE ramp level programmed here */
+
+	/* ABE DPLL Driftguard Enable */
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_DRIFTGUARD_EN_MASK,
+			0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT,
+			OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
 	/*
 	 * XXX this should use the new omap4_dpll_regm4xen_round_rate and
 	 * relock it
@@ -283,7 +344,13 @@ int omap4_dpll_low_power_cascade_enter()
 	}
 #endif
 
+	goto out;
+
 out_clksel_opp:
+dpll_abe_reparent_fail:
+dpll_abe_bypass_fail:
+	clk_set_rate(dpll_abe_ck, state.dpll_abe_rate);
+	omap3_dpll_allow_idle(dpll_abe_ck);
 out:
 	return ret;
 }
