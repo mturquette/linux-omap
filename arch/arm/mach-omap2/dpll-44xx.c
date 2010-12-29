@@ -30,6 +30,7 @@
 #define MAX_FREQ_UPDATE_TIMEOUT  100000
 #define DPLL_ABE_CLKSEL_SYS_32K	0x1
 #define DPLL_REGM4XEN_ENABLE	0x1
+#define DPLL_REGM4XEN_MULT	0x4
 
 static struct clockdomain *l3_emif_clkdm;
 
@@ -168,7 +169,7 @@ int omap4_set_freq_update(void)
 
 long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 {
-	int ret = 0, regm4xen = 1;
+	int ret = 0;
 	u32 reg;
 
 	if(strcmp(clk->name, "dpll_abe_ck")) {
@@ -181,31 +182,35 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 	/* regm4xen adds a multiplier of 4 to DPLL calculations */
 	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-	if (reg && (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT))
-		regm4xen = 4;
-
 	/*
-	 * XXX this is lazy.  sue me.
-	 * Basic idea here is to use existing round rate function to generate
-	 * MN dividers.  If REGM4XEN is set we divide the desired rate by the
-	 * multiplier to trick round_rate function into determining the
-	 * correct MN values.
+	 * XXX this is a gross hack.
+	 * If REGM4XEN is set then always program DPLL_ABE to 196MHz.
+	 * Otherwise round the rate like always.
 	 */
-	ret = omap2_dpll_round_rate(clk, (target_rate / regm4xen));
+	if (reg && (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT)) {
+		pr_err("%s: detected REGM4XEN!  hijacking rate rounding\n", __func__);
+		clk->dpll_data->last_rounded_m    = 750;
+		clk->dpll_data->last_rounded_n    = 1;
+		clk->dpll_data->last_rounded_rate = 196608000;
+		goto out;
+	}
 
-	pr_err("%s: clk->name is %s, target_rate is %lu, omap2_dpll_round_rate returned %d\n",
-			__func__, clk->name, target_rate, ret);
+	/* XXX this is lazy.  sue me. */
+	ret = omap2_dpll_round_rate(clk, target_rate);
 
+	/*pr_err("%s: clk->name is %s, target_rate is %lu, omap2_dpll_round_rate returned %d\n",
+			__func__, clk->name, target_rate, ret);*/
+
+	/*clk->dpll_data->last_rounded_rate *= regm4xen;
+	pr_err("%s: last_rounded_rate hacked to become %lu\n", __func__,
+			clk->dpll_data->last_rounded_rate);*/
+
+out:
 	pr_err("%s: last_rounded_m is %d, last_rounded_n is %d, last_rounded_rate is %lu\n",
 			__func__, clk->dpll_data->last_rounded_m,
 			clk->dpll_data->last_rounded_n,
 			clk->dpll_data->last_rounded_rate);
 
-	clk->dpll_data->last_rounded_rate *= regm4xen;
-	pr_err("%s: last_rounded_rate hacked to become %lu\n", __func__,
-			clk->dpll_data->last_rounded_rate);
-
-out:
 	return clk->dpll_data->last_rounded_rate;
 }
 
@@ -250,6 +255,9 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* Device RET/OFF are not supported in DPLL cascading; gate them */
 	omap3_dpll_deny_idle(dpll_abe_ck);
+
+	/* enable DPLL_ABE if not done already */
+	clk_enable(dpll_abe_ck);
 
 	/* bypass DPLL_ABE */
 	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
@@ -321,9 +329,6 @@ int omap4_dpll_low_power_cascade_enter()
 	 * relock it
 	 */
 	clk_set_rate(dpll_abe_ck, 196608000);
-
-	/* enable DPLL_ABE if not done already */
-	clk_enable(dpll_abe_ck);
 
 	pr_err("%s: clk_get_rate(dpll_abe_ck) is %lu\n",
 			__func__, clk_get_rate(dpll_abe_ck));
