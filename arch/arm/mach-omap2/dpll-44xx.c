@@ -23,6 +23,7 @@
 #include <mach/omap4-common.h>
 
 #include "clock.h"
+#include "clock44xx.h"
 #include "cm.h"
 #include "cm-regbits-44xx.h"
 #include "prm-regbits-44xx.h"
@@ -46,6 +47,40 @@ static struct dpll_cascade_saved_state {
 	struct clk *abe_dpll_refclk_mux_ck_parent;
 	u32 cm_clkmode_dpll_abe;
 } state;
+
+int omap4_dpll_regm4xen_enable(struct clk *clk)
+{
+	struct dpll_data *dd;
+
+	dd = clk->dpll_data;
+
+	/* set DPLL_ABE REGM4XEN bit */
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
+			DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT,
+			OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
+	dd->max_multiplier = OMAP4430_MAX_DPLL_MULT * OMAP4430_REGM4XEN_MULT;
+
+	return 0;
+}
+
+int omap4_dpll_regm4xen_disable(struct clk *clk)
+{
+	struct dpll_data *dd;
+
+	dd = clk->dpll_data;
+
+	/* unset DPLL_ABE REGM4XEN bit */
+	cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
+			0x0 << OMAP4430_DPLL_REGM4XEN_SHIFT,
+			OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
+	dd->max_multiplier = OMAP4430_MAX_DPLL_MULT;
+
+	return 0;
+}
 
 /**
  * omap4_core_dpll_m2_set_rate - set CORE DPLL M2 divider
