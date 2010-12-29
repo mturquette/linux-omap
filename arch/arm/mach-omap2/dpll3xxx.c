@@ -473,6 +473,8 @@ int omap3_noncore_dpll_set_rate(struct clk *clk, unsigned long rate)
 			omap2_clk_enable(new_parent);
 			omap2_clk_disable(clk->parent);
 		}
+		pr_err("%s: reparenting %s to %s, and setting old rate %lu to new rate %lu\n",
+				__func__, clk->name, new_parent->name, clk->rate, rate);
 		clk_reparent(clk, new_parent);
 		clk->rate = rate;
 	}

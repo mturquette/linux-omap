@@ -184,16 +184,30 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
 	/*
 	 * XXX this is a gross hack.
-	 * If REGM4XEN is set then always program DPLL_ABE to 196MHz.
-	 * Otherwise round the rate like always.
+	 *
+	 * If REGM4XEN is set and we're putting DPLL_ABE at 196.608MHz then
+	 * hardcode pre-computed dividers.  Otherwise round the rate like
+	 * always.
 	 */
 	if (reg && (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT)) {
-		pr_err("%s: detected REGM4XEN!  hijacking rate rounding\n", __func__);
-		clk->dpll_data->last_rounded_m    = 750;
-		clk->dpll_data->last_rounded_n    = 1;
-		clk->dpll_data->last_rounded_rate = 196608000;
-		goto out;
+		if (target_rate == 196608000) {
+			pr_err("%s: detected REGM4XEN!  hijacking rate rounding\n", __func__);
+			clk->dpll_data->last_rounded_m    = 750;
+			clk->dpll_data->last_rounded_n    = 1;
+			clk->dpll_data->last_rounded_rate = 196608000;
+			goto out;
+		} else {
+			pr_warn("%s: clock framework only supports DPLL_ABE at 196.608MHz when REGM4XEN bit is set.  Unsetting REGM4XEN and proceeding with rate round\n",
+					__func__);
+
+			/* unset DPLL_ABE REGM4XEN bit */
+			cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
+					0x0 << OMAP4430_DPLL_REGM4XEN_SHIFT,
+					OMAP4430_CM1_CKGEN_MOD,
+					OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+		}
 	}
+
 
 	/* XXX this is lazy.  sue me. */
 	ret = omap2_dpll_round_rate(clk, target_rate);
