@@ -293,15 +293,13 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* bypass DPLL_ABE */
 	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
-	/* XXX is it OK if I don't use MN bypass here? */
 	omap3_noncore_dpll_set_rate(dpll_abe_ck, dpll_abe_ck->parent->rate);
-	//clk_enable(dpll_abe_ck);
 
 	/* verify DPLL_ABE is bypassed */
 	for (i = 0; i < 10000; i++) {
 		ret = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 				OMAP4_CM_IDLEST_DPLL_ABE_OFFSET);
-		if (!ret)
+		if (likely(!ret))
 			break;
 	}
 
@@ -314,7 +312,6 @@ int omap4_dpll_low_power_cascade_enter()
 	/* set SYS_32K_CK as input to DPLL_ABE */
 	state.abe_dpll_refclk_mux_ck_parent =
 		clk_get_parent(abe_dpll_refclk_mux_ck);
-	//ret = omap2_clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
 	ret = clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
 
 	if (ret) {
@@ -325,10 +322,15 @@ int omap4_dpll_low_power_cascade_enter()
 	/* program DPLL_ABE for 196.608MHz */
 
 	/* set DPLL_ABE REGM4XEN bit */
-	cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
-			DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT,
-			OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+	omap4_dpll_regm4xen_enable(dpll_abe_ck);
+
+	/*
+	* XXX need to profile below bitfields to see what they /really/
+	* before enabling DPLL cascading mode
+	*
+	* might be easier to just save CM_CLKMODE_DPLL_ABE in one pass and
+	* restore it after the fact!
+	*/
 
 	/* ABE DPLL LP Mode Enable */
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_LPMODE_EN_MASK,
@@ -356,11 +358,8 @@ int omap4_dpll_low_power_cascade_enter()
 			OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
 
-	/*
-	 * XXX this should use the new omap4_dpll_regm4xen_round_rate and
-	 * relock it
-	 */
-	clk_set_rate(dpll_abe_ck, 196608000);
+	/* XXX divide by 2 here since DPLL X2 clocks are not modelled */
+	clk_set_rate(dpll_abe_ck, 196608000 / 2);
 
 	pr_err("%s: clk_get_rate(dpll_abe_ck) is %lu\n",
 			__func__, clk_get_rate(dpll_abe_ck));
