@@ -204,55 +204,38 @@ int omap4_set_freq_update(void)
 
 long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 {
-	int ret = 0;
+	long ret;
 	u32 reg;
+	struct dpll_data *dd;
 
 	if(strcmp(clk->name, "dpll_abe_ck")) {
 		pr_warn("%s: clk is not DPLL_ABE.  Clock data bug?\n",
 				__func__);
-		ret = -EINVAL;
+		ret = ~0;
 		goto out;
 	}
+	dd = clk->dpll_data;
+
+	omap2_dpll_round_rate(clk, target_rate);
 
 	/* regm4xen adds a multiplier of 4 to DPLL calculations */
 	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-	/*
-	 * XXX this is a gross hack.
-	 *
-	 * If REGM4XEN is set and we're putting DPLL_ABE at 196.608MHz then
-	 * hardcode pre-computed dividers.  Otherwise round the rate like
-	 * always.
-	 */
-	if (reg && (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT)) {
-		if (target_rate == 196608000) {
-			pr_err("%s: detected REGM4XEN!  hijacking rate rounding\n", __func__);
-			clk->dpll_data->last_rounded_m    = 750;
-			clk->dpll_data->last_rounded_n    = 1;
-			clk->dpll_data->last_rounded_rate = 196608000;
-			goto out;
-		} else {
-			pr_warn("%s: clock framework only supports DPLL_ABE at 196.608MHz when REGM4XEN bit is set.  Unsetting REGM4XEN and proceeding with rate round\n",
-					__func__);
+	if (reg & (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT)) {
+		/*
+		 * FIXME this is lazy; we only support values of M that are
+		 * divisible by 4 (a safe bet) and for which M/4 is >= 2
+		 */
+		if (dd->last_rounded_m % OMAP4430_REGM4XEN_MULT)
+			pr_warn("%s: %s's M (%u) is not divisible by 4\n",
+					__func__, clk->name, dd->last_rounded_m);
 
-			/* unset DPLL_ABE REGM4XEN bit */
-			cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
-					0x0 << OMAP4430_DPLL_REGM4XEN_SHIFT,
-					OMAP4430_CM1_CKGEN_MOD,
-					OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-		}
+		if ((dd->last_rounded_m / OMAP4430_REGM4XEN_MULT) < 2)
+			pr_warn("%s: %s's M (%u) is too low.  Try disabling REGM4XEN for this frequency\n",
+					__func__, clk->name, dd->last_rounded_m);
+
+		dd->last_rounded_m /= OMAP4430_REGM4XEN_MULT;
 	}
-
-
-	/* XXX this is lazy.  sue me. */
-	ret = omap2_dpll_round_rate(clk, target_rate);
-
-	/*pr_err("%s: clk->name is %s, target_rate is %lu, omap2_dpll_round_rate returned %d\n",
-			__func__, clk->name, target_rate, ret);*/
-
-	/*clk->dpll_data->last_rounded_rate *= regm4xen;
-	pr_err("%s: last_rounded_rate hacked to become %lu\n", __func__,
-			clk->dpll_data->last_rounded_rate);*/
 
 out:
 	pr_err("%s: last_rounded_m is %d, last_rounded_n is %d, last_rounded_rate is %lu\n",
