@@ -45,6 +45,7 @@ static struct dpll_cascade_saved_state {
 	struct clk *dpll_iva_parent;
 	u32 dpll_iva_rate;
 	struct clk *abe_dpll_refclk_mux_ck_parent;
+	u32 cm_clkmode_dpll_abe;
 } state;
 
 int omap4_dpll_regm4xen_enable(struct clk *clk)
@@ -249,8 +250,9 @@ out:
 int omap4_dpll_low_power_cascade_enter()
 {
 	u32 ret = 0;
+	u32 reg, mask;
 	int i;
-	struct clk *dpll_abe_ck, *dpll_core_ck, dpll_mpu_ck;
+	struct clk *dpll_abe_ck, *dpll_abe_x2_ck, *dpll_core_ck, dpll_mpu_ck;
 	struct clk *sys_32k_ck, *sys_clkin_ck;
 	struct clk *abe_clk, *abe_dpll_refclk_mux_ck;
 	unsigned long clk_rate;
@@ -263,27 +265,19 @@ int omap4_dpll_low_power_cascade_enter()
 	 * functional clock can be 48.152MHz.
 	 */
 
-	pr_err("%s\n", __func__);
-
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
-	if (!dpll_abe_ck)
-		pr_err("%s: could not get dpll_abe_ck\n", __func__);
-
+	dpll_abe_x2_ck = clk_get(NULL, "dpll_abe_x2_ck");
 	sys_32k_ck = clk_get(NULL, "sys_32k_ck");
-	if (!sys_32k_ck)
-		pr_err("%s: could not get sys_32k_ck\n", __func__);
-
 	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
-	if (!sys_clkin_ck)
-		pr_err("%s: could not get sys_clkin_ck\n", __func__);
-
 	abe_clk = clk_get(NULL, "abe_clk");
-	if (!abe_clk)
-		pr_err("%s: could not get abe_clk\n", __func__);
-
 	abe_dpll_refclk_mux_ck = clk_get(NULL, "abe_dpll_refclk_mux_ck");
-	if (!abe_dpll_refclk_mux_ck)
-		pr_err("%s: could not get abe_dpll_refclk_mux_ck\n", __func__);
+
+	if (!dpll_abe_ck || !dpll_abe_x2_ck || !sys_32k_ck || !sys_clkin_ck ||
+			!abe_clk || !abe_dpll_refclk_mux_ck) {
+		pr_warn("%s: failed to get all necessary clocks\n", __func__);
+		ret = -ENODEV;
+		goto out;
+	}
 
 	/* Device RET/OFF are not supported in DPLL cascading; gate them */
 	omap3_dpll_deny_idle(dpll_abe_ck);
@@ -304,10 +298,10 @@ int omap4_dpll_low_power_cascade_enter()
 	}
 
 	if (ret) {
-		pr_err("%s: DPLL_ABE does not enter bypass\n", __func__);
+		pr_debug("%s: DPLL_ABE failed to enter bypass\n", __func__);
 		goto dpll_abe_bypass_fail;
 	} else
-		pr_err("%s: DPLL_ABE bypassed after %d loops\n", __func__, i);
+		pr_debug("%s: DPLL_ABE bypassed successfully\n", __func__);
 
 	/* set SYS_32K_CK as input to DPLL_ABE */
 	state.abe_dpll_refclk_mux_ck_parent =
@@ -315,22 +309,32 @@ int omap4_dpll_low_power_cascade_enter()
 	ret = clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
 
 	if (ret) {
-		pr_err("%s: clk_get_parent returns %d\n", __func__, ret);
+		pr_warn("%s: clk_get_parent returns %d\n", __func__, ret);
 		goto dpll_abe_reparent_fail;
 	}
 
 	/* program DPLL_ABE for 196.608MHz */
-
 	/* set DPLL_ABE REGM4XEN bit */
 	omap4_dpll_regm4xen_enable(dpll_abe_ck);
 
-	/*
-	* XXX need to profile below bitfields to see what they /really/
-	* before enabling DPLL cascading mode
-	*
-	* might be easier to just save CM_CLKMODE_DPLL_ABE in one pass and
-	* restore it after the fact!
-	*/
+	pr_err("%s: ATTN: CLKMODE_DPLL_ABE is 0x%x\n", __func__,
+			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+				OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET));
+
+	/* save CKGEN_CM1.CM_CLKMODE_DPLL_ABE */
+	mask =	(OMAP4430_DPLL_LPMODE_EN_MASK |
+		 OMAP4430_DPLL_RELOCK_RAMP_EN_MASK |
+		 OMAP4430_DPLL_RAMP_RATE_MASK |
+		 OMAP4430_DPLL_DRIFTGUARD_EN_MASK);
+
+	pr_err("%s: ATT: mask is 0x%x\n", __func__, mask);
+
+	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+	pr_err("%s: ATTN: reg is 0x%x\n", __func__, reg);
+	reg &= mask;
+	pr_err("%s: ATTN: reg is 0x%x\n", __func__, reg);
+	state.cm_clkmode_dpll_abe = reg;
 
 	/* ABE DPLL LP Mode Enable */
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_LPMODE_EN_MASK,
@@ -357,11 +361,24 @@ int omap4_dpll_low_power_cascade_enter()
 			0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT,
 			OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+	/* FIXME revisit this */
+	mdelay(10);
+	pr_err("%s: ATTN: CLKMODE_DPLL_ABE is 0x%x\n", __func__,
+			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+				OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET));
 
-	/* XXX divide by 2 here since DPLL X2 clocks are not modelled */
+	/*
+	 * XXX on OMAP4 the DPLL X2 clocks aren't really X2.  Instead they
+	 * reflect the actual output DPLL and the non-X2 clocks are half of
+	 * that output.  It would be preferable to set the rate of
+	 * dpll_abe_x2_ck but that clock doesn't have any clock ops.  Program
+	 * dpll_abe_ck for half of the desired rate instead.
+	 */
 	clk_set_rate(dpll_abe_ck, 196608000 / 2);
 
 	pr_err("%s: clk_get_rate(dpll_abe_ck) is %lu\n",
+			__func__, clk_get_rate(dpll_abe_ck));
+	pr_err("%s: clk_get_rate(dpll_abe_x2_ck) is %lu\n",
 			__func__, clk_get_rate(dpll_abe_ck));
 
 	/* XXX below code is not yet ready */
