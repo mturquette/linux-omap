@@ -259,12 +259,15 @@ out:
 
 int omap4_dpll_low_power_cascade_enter()
 {
-	u32 ret = 0;
+	int ret = 0;
 	u32 reg, mask;
 	int i;
-	struct clk *dpll_abe_ck, *dpll_abe_x2_ck, *dpll_core_ck, dpll_mpu_ck;
 	struct clk *sys_32k_ck, *sys_clkin_ck;
+	struct clk *dpll_abe_ck, *dpll_abe_x2_ck;
 	struct clk *abe_clk, *abe_dpll_refclk_mux_ck;
+	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
+	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
+	struct clk *dpll_core_ck, *dpll_core_m2_ck;
 	unsigned long clk_rate;
 
 	/*
@@ -281,9 +284,19 @@ int omap4_dpll_low_power_cascade_enter()
 	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
 	abe_clk = clk_get(NULL, "abe_clk");
 	abe_dpll_refclk_mux_ck = clk_get(NULL, "abe_dpll_refclk_mux_ck");
+	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
+	div_mpu_hs_clk = clk_get(NULL, "div_mpu_hs_clk");
+	dpll_iva_ck = clk_get(NULL, "dpll_iva_ck");
+	div_iva_hs_clk = clk_get(NULL, "div_iva_hs_clk");
+	iva_hsd_byp_clk_mux_ck = clk_get(NULL, "iva_hsd_byp_clk_mux_ck");
+	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
+	dpll_core_m2_ck = clk_get(NULL, "dpll_core_ck");
 
 	if (!dpll_abe_ck || !dpll_abe_x2_ck || !sys_32k_ck || !sys_clkin_ck ||
-			!abe_clk || !abe_dpll_refclk_mux_ck) {
+			!abe_clk || !abe_dpll_refclk_mux_ck || !dpll_mpu_ck ||
+			!div_mpu_hs_clk || !dpll_iva_ck || !div_iva_hs_clk ||
+			!iva_hsd_byp_clk_mux_ck || !dpll_core_ck ||
+			!dpll_core_m2_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -299,6 +312,8 @@ int omap4_dpll_low_power_cascade_enter()
 	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
 	omap3_noncore_dpll_set_rate(dpll_abe_ck, dpll_abe_ck->parent->rate);
 
+	/* XXX might need to put mdelays here because of comment code below */
+#if 0
 	/* verify DPLL_ABE is bypassed */
 	for (i = 0; i < 10000; i++) {
 		ret = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
@@ -306,6 +321,7 @@ int omap4_dpll_low_power_cascade_enter()
 		if (likely(!ret))
 			break;
 	}
+#endif
 
 	if (ret) {
 		pr_debug("%s: DPLL_ABE failed to enter bypass\n", __func__);
@@ -371,7 +387,7 @@ int omap4_dpll_low_power_cascade_enter()
 			0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT,
 			OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-	/* FIXME revisit this */
+	/* FIXME revisit this delay.  Can I consolidate the writes above? */
 	mdelay(10);
 	pr_err("%s: ATTN: CLKMODE_DPLL_ABE is 0x%x\n", __func__,
 			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
@@ -390,9 +406,22 @@ int omap4_dpll_low_power_cascade_enter()
 			__func__, clk_get_rate(dpll_abe_ck));
 	pr_err("%s: clk_get_rate(dpll_abe_x2_ck) is %lu\n",
 			__func__, clk_get_rate(dpll_abe_ck));
+	pr_err("%s: dpll_abe_ck->rate is %lu\n", __func__,
+			dpll_abe_ck->rate);
+	pr_err("%s: dpll_abe_x2_ck->rate is %lu\n", __func__,
+			dpll_abe_x2_ck->rate);
 
-	/* XXX below code is not yet ready */
+
 #if 0
+
+	/*
+	 * XXX with my version of the kernel ABE fclk is still
+	 * (DPLL_ABE_X2_CK / 1).  Is this fixed in recent kernels from Misa?
+	 * Or do I still need to program it here?
+	 */
+	pr_err("%s: CKGEN_CM1.CM_CLKSEL_ABB.CLKSEL_OPP is 0x%x\n",
+			__func__, cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+				OMAP4_CM_CLKSEL_ABE_OFFSET));
 
 	/* divide 196.608MHz by 4 to get for AESS clock */
 	clk_set_rate(abe_clk, 49152000);
@@ -405,6 +434,40 @@ int omap4_dpll_low_power_cascade_enter()
 		ret = -EINVAL;
 		goto out_clksel_opp;
 	}
+#endif
+
+	/* CONFIGURE EMIF */
+	/* bypass DPLL_CORE (reconfigures EMIF) */
+	//ret = omap4_core_dpll_m2_set_rate(dpll_core_m2_ck, dpll_core_ck->parent->parent->rate);
+	//ret = clk_set_rate(dpll_core_m2_ck, dpll_core_ck->parent->parent->rate);
+	//pr_err("%s: ret is %d\n", __func__, ret);
+
+	/*
+	 * bypass DPLLs for MPU, IVA, PER and USB.  These will be reparented
+	 * to DPLL_CORE later.
+	 */
+
+	/* program MPU & IVA bypass clock dividers to divide by 2 */
+	//ret = clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
+	//clk_set_rate(
+	pr_err("%s: div_mpu_hs_clk rate is 0x%lx, and clksel_reg contains 0x%lx\n",
+			__func__, clk_get_rate(div_mpu_hs_clk),
+			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+				div_mpu_hs_clk->clksel_reg));
+
+	pr_err("%s: div_iva_hs_clk rate is 0x%lx, and clksel_reg contains 0x%lx\n",
+			__func__, clk_get_rate(div_iva_hs_clk),
+			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+				div_iva_hs_clk->clksel_reg));
+
+#if 0
+	/* bypass DPLL_MPU */
+	state.dpll_mpu_rate = clk_get_rate(dpll_mpu_ck);
+	omap3_noncore_dpll_set_rate(dpll_mpu_ck, dpll_mpu_ck->parent->rate);
+
+	/* bypass DPLL_IVA */
+	state.dpll_iva_rate = clk_get_rate(dpll_iva_ck);
+	omap3_noncore_dpll_set_rate(dpll_iva_ck, dpll_iva_ck->parent->rate);
 #endif
 
 	goto out;
