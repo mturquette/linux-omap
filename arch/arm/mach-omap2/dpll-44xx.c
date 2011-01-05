@@ -225,12 +225,6 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 	u32 reg;
 	struct dpll_data *dd;
 
-	if(strcmp(clk->name, "dpll_abe_ck")) {
-		pr_warn("%s: clk is not DPLL_ABE.  Clock data bug?\n",
-				__func__);
-		ret = ~0;
-		goto out;
-	}
 	dd = clk->dpll_data;
 
 	omap2_dpll_round_rate(clk, target_rate);
@@ -255,7 +249,7 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 	}
 
 out:
-	pr_err("%s: last_rounded_m is %d, last_rounded_n is %d, last_rounded_rate is %lu\n",
+	pr_debug("%s: last_rounded_m is %d, last_rounded_n is %d, last_rounded_rate is %lu\n",
 			__func__, clk->dpll_data->last_rounded_m,
 			clk->dpll_data->last_rounded_n,
 			clk->dpll_data->last_rounded_rate);
