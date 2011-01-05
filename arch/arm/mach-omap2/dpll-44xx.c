@@ -203,6 +203,22 @@ int omap4_set_freq_update(void)
 	return 0;
 }
 
+unsigned long omap4_dpll_regm4xen_recalc(struct clk *clk)
+{
+	unsigned long rate;
+	u32 reg;
+
+	rate = omap2_get_dpll_rate(clk);
+
+	/* regm4xen adds a multiplier of 4 to DPLL calculations */
+	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+	if (reg & (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT))
+		rate *= OMAP4430_REGM4XEN_MULT;
+
+	return rate;
+}
+
 long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 {
 	long ret;
