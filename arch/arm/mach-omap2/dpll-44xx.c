@@ -267,7 +267,7 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *abe_clk, *abe_dpll_refclk_mux_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
-	struct clk *dpll_core_ck, *dpll_core_m2_ck;
+	struct clk *dpll_core_ck, *dpll_core_m2_ck, *core_hsd_byp_clk_mux_ck;
 	unsigned long clk_rate;
 
 	/*
@@ -361,7 +361,7 @@ int omap4_dpll_low_power_cascade_enter()
 	reg &= mask;
 	pr_err("%s: ATTN: reg is 0x%x\n", __func__, reg);
 	state.cm_clkmode_dpll_abe = reg;
-
+mdelay(10);
 	/* ABE DPLL LP Mode Enable */
 	cm_rmw_mod_reg_bits(OMAP4430_DPLL_LPMODE_EN_MASK,
 			0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT,
@@ -392,7 +392,7 @@ int omap4_dpll_low_power_cascade_enter()
 	pr_err("%s: ATTN: CLKMODE_DPLL_ABE is 0x%x\n", __func__,
 			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 				OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET));
-
+	mdelay(10);
 	/*
 	 * XXX on OMAP4 the DPLL X2 clocks aren't really X2.  Instead they
 	 * reflect the actual output DPLL and the non-X2 clocks are half of
@@ -450,6 +450,7 @@ int omap4_dpll_low_power_cascade_enter()
 	/* program MPU & IVA bypass clock dividers to divide by 2 */
 	//ret = clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
 	//clk_set_rate(
+#if 0
 	pr_err("%s: div_mpu_hs_clk rate is 0x%lx, and clksel_reg contains 0x%lx\n",
 			__func__, clk_get_rate(div_mpu_hs_clk),
 			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
@@ -459,6 +460,7 @@ int omap4_dpll_low_power_cascade_enter()
 			__func__, clk_get_rate(div_iva_hs_clk),
 			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 				div_iva_hs_clk->clksel_reg));
+#endif
 
 #if 0
 	/* bypass DPLL_MPU */
@@ -469,6 +471,153 @@ int omap4_dpll_low_power_cascade_enter()
 	state.dpll_iva_rate = clk_get_rate(dpll_iva_ck);
 	omap3_noncore_dpll_set_rate(dpll_iva_ck, dpll_iva_ck->parent->rate);
 #endif
+
+	/* Program the MPU and IVA Bypass clock dividers for div by 2 */
+	reg = 0x1;
+	__raw_writel(reg, OMAP4430_CM_BYPCLK_DPLL_MPU);
+	__raw_writel(reg, OMAP4430_CM_BYPCLK_DPLL_IVA);
+	printk("cpufreq-omap: Successfully changed the MPU & IVA clock dividers\n");
+
+	/* Configure EMIF Memory Interface */
+	printk("cpufreq-omap: Now changing the EMIF clock rate setting for DPLL cascading...\n");
+	//validrate = 196608000;
+	/* validrate = 98304000; */
+	l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
+	/* Configures MEMIF domain in SW_WKUP */
+	omap2_clkdm_wakeup(l3_emif_clkdm);
+	/*
+	 * Program EMIF timing parameters in EMIF shadow registers
+	 * for targetted DRR clock.
+	 * DDR Clock = core_dpll_m2 / 2
+	 */
+	omap_emif_setup_registers(196608000 >> 1, LPDDR2_VOLTAGE_STABLE);
+
+	/* Disable auto-control for MPU and IVA PLL's */
+	reg = 0;
+	__raw_writel(reg, OMAP4430_CM_AUTOIDLE_DPLL_MPU);
+	__raw_writel(reg, OMAP4430_CM_AUTOIDLE_DPLL_IVA);
+
+	/* Now Put MPU and IVA PLL's in Bypass and Use Core PLL Clock as Bypass source*/
+
+	reg = __raw_readl(OMAP4430_CM_CLKMODE_DPLL_MPU);
+	reg &= 0xFFFFFFF8;
+	reg |= 0x5;
+	__raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_MPU);
+	printk("cpufreq-omap: Successfully put the MPU DPLL into Bypass mode\n");
+
+	/* Change IVA DPLL bypass clock input to CLKINPULOW source */
+	reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_IVA);
+	reg |= (0x1 << 23);
+	__raw_writel(reg, OMAP4430_CM_CLKSEL_DPLL_IVA);
+
+	reg = __raw_readl(OMAP4430_CM_CLKMODE_DPLL_IVA);
+	reg &= 0xFFFFFFF8;
+	reg |= 0x5;
+	__raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_IVA);
+	printk("cpufreq-omap: Successfully put the IVA DPLL into Bypass mode\n");
+
+	/* Now put PER PLL in Bypass and Use Core PLL Clock */
+	/* reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_PER);
+	   reg |= (0x1 << 23);
+	   __raw_writel(reg, OMAP4430_CM_CLKSEL_DPLL_PER);
+	   reg = __raw_readl(OMAP4430_CM_CLKMODE_DPLL_PER);
+	   reg &= 0xFFFFFFF8;
+	   reg |= 0x5;
+	   __raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_PER);
+	   printk("cpufreq-omap: Successfully put the PER DPLL into Bypass mode\n"); */
+
+	/* reg = 0x1; */  /* For divide-by-2 on other functional clocks */
+	reg = 0; /* Keep divide-by-1 for other functional clocks */
+	__raw_writel(reg, OMAP4430_CM_SCALE_FCLK);
+
+	/* Now Put CORE PLL In Bypass and Use the ABE o/p clock */
+
+	reg = 0x2;
+	__raw_writel(reg, OMAP4430_CM_MEMIF_CLKSTCTRL);
+
+	/* Change bypass clock input to CLKINPULOW source */
+	reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_CORE);
+	reg |= (0x1 << 23);
+	__raw_writel(reg, OMAP4430_CM_CLKSEL_DPLL_CORE);
+
+	/* Zero out CLKSEL_CORE divider to make CORE_CLK = CORE_X2_CLK */
+	reg = __raw_readl(OMAP4430_CM_CLKSEL_CORE);
+	reg &= 0xFFFFFFF0;
+	__raw_writel(reg, OMAP4430_CM_CLKSEL_CORE);
+	printk("cpufreq-omap: Successfully changed the CORE CLK divider setting\n");
+
+	/* Update SHADOW register for proper CORE DPLL and EMIF config updates */
+	reg = (0x2 << 11) | (0x5 << 8) | (0x1 << 3);
+	__raw_writel(reg, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
+	reg |= 0x1;
+	__raw_writel(reg, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
+	while (((reg = __raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1)) & 0x1) != 0x0)
+		printk("cpufreq-omap: Waiting for CORE DPLL config to update...\n");
+	printk("cpufreq-omap: Successfully updated the CORE DPLL Shadow Register\n");
+
+	/* Update CORE DPLL divider value for M5 output */
+	reg = 0x1;
+	__raw_writel(reg, OMAP4430_CM_DIV_M5_DPLL_CORE);
+	printk("cpufreq-omap: Successfully changed the CORE DIV M5 divider setting\n");
+
+	/* Set .parent field of dpll_abe_ck to update (in case DPLL was in Bypass before) */
+	omap2_init_dpll_parent(dpll_abe_ck);
+
+	/* Set .parent field of core_hsd_byp_clk_mux_ck to update to the latest */
+	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
+	if (!core_hsd_byp_clk_mux_ck) {
+		printk("Could not get CORE HSD Bypass clock - core_hsd_byp_clk_mux_ck\n");
+	} else {
+		omap2_init_clksel_parent(core_hsd_byp_clk_mux_ck);
+	}
+
+	/* Set .parent field of dpll_core_ck to update to the latest */
+	omap2_init_dpll_parent(dpll_core_ck);
+
+	/* Set .parent field of iva_hsd_byp_clk_mux_ck to update to the latest */
+	iva_hsd_byp_clk_mux_ck = clk_get(NULL, "iva_hsd_byp_clk_mux_ck");
+	if (!iva_hsd_byp_clk_mux_ck) {
+		printk("Could not get IVA HSD Bypass clock - iva_hsd_byp_clk_mux_ck\n");
+	} else {
+		omap2_init_clksel_parent(iva_hsd_byp_clk_mux_ck);
+	}
+
+	/* Set .parent field of dpll_iva_ck to update to the latest */
+	omap2_init_dpll_parent(dpll_iva_ck);
+
+	/* Set .parent field of dpll_mpu_ck to update to the latest */
+	omap2_init_dpll_parent(dpll_mpu_ck);
+
+	recalculate_root_clocks();
+
+	/* DDR clock rate */
+	clk_rate = (unsigned long) clk_get_rate(dpll_core_m2_ck);
+	printk("Latest DPLL_CORE_M2_CK (EMIF source) is %ld Hz\n", clk_rate);
+
+	/* Configures MEMIF domain back to HW_WKUP */
+	omap2_clkdm_allow_idle(l3_emif_clkdm);
+
+	/* Let HW control ABE DPLL now, since we have the DPLL's chained */
+	reg = 0x1;
+	__raw_writel(reg, OMAP4430_CM_AUTOIDLE_DPLL_ABE);
+
+	/* Move PRM from SYS Clock to ABE LP Clock and ABE Bypass clock to 32kHz */
+	reg = 0x1;
+	__raw_writel(reg, OMAP4430_CM_L4_WKUP_CLKSEL);
+
+	/* Program the CLKREQCTRL in PRM */
+	reg = 0;
+	__raw_writel(reg, OMAP4430_PRM_CLKREQCTRL);
+
+	/* Program emu cd to HW-AUTO mode and change clock source */
+	reg = __raw_readl(OMAP4430_CM_EMU_DEBUGSS_CLKCTRL);
+	reg |= (0x1 << 22) | (0x1 << 20);
+	__raw_writel(reg, OMAP4430_CM_EMU_DEBUGSS_CLKCTRL);
+
+	reg = 0x3;
+	__raw_writel(reg, OMAP4430_CM_EMU_CLKSTCTRL);
+
+	printk("cpufreq-omap: Done forcing DPLL Cascading\n");
 
 	goto out;
 
