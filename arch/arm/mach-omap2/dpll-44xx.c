@@ -312,17 +312,6 @@ int omap4_dpll_low_power_cascade_enter()
 	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
 	omap3_noncore_dpll_set_rate(dpll_abe_ck, dpll_abe_ck->parent->rate);
 
-	/* XXX might need to put mdelays here because of comment code below */
-#if 0
-	/* verify DPLL_ABE is bypassed */
-	for (i = 0; i < 10000; i++) {
-		ret = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-				OMAP4_CM_IDLEST_DPLL_ABE_OFFSET);
-		if (likely(!ret))
-			break;
-	}
-#endif
-
 	if (ret) {
 		pr_debug("%s: DPLL_ABE failed to enter bypass\n", __func__);
 		goto dpll_abe_bypass_fail;
@@ -361,37 +350,23 @@ int omap4_dpll_low_power_cascade_enter()
 	reg &= mask;
 	pr_err("%s: ATTN: reg is 0x%x\n", __func__, reg);
 	state.cm_clkmode_dpll_abe = reg;
-mdelay(10);
-	/* ABE DPLL LP Mode Enable */
-	cm_rmw_mod_reg_bits(OMAP4430_DPLL_LPMODE_EN_MASK,
-			0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT,
-			OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
 
-	/* ABE DPLL Relock Ramp Enable */
-	cm_rmw_mod_reg_bits(OMAP4430_DPLL_RELOCK_RAMP_EN_MASK,
-			0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT,
-			OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-
-	/* ABE DPLL Ramp Rate */
-	cm_rmw_mod_reg_bits(OMAP4430_DPLL_RAMP_RATE_MASK,
-			0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT,
-			OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-
-	/* no DPLL_ABE ramp level programmed here */
-
-	/* ABE DPLL Driftguard Enable */
-	cm_rmw_mod_reg_bits(OMAP4430_DPLL_DRIFTGUARD_EN_MASK,
-			0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT,
-			OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-	/* FIXME revisit this delay.  Can I consolidate the writes above? */
 	mdelay(10);
-	pr_err("%s: ATTN: CLKMODE_DPLL_ABE is 0x%x\n", __func__,
-			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-				OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET));
+
+	/*
+	 * DPLL_ABE LP Mode Enable
+	 * DPLL_ABE Relock Ramp Enable
+	 * DPLL_ABE Ramp Rate
+	 * DPLL_ABE Driftguard Enable
+	 */
+	reg = ((0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT) |
+			(0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT) |
+			(0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT) |
+			(0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT));
+
+	cm_rmw_mod_reg_bits(mask, reg, OMAP4430_CM1_CKGEN_MOD,
+			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+
 	mdelay(10);
 	/*
 	 * XXX on OMAP4 the DPLL X2 clocks aren't really X2.  Instead they
