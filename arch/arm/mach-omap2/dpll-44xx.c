@@ -386,14 +386,7 @@ int omap4_dpll_low_power_cascade_enter()
 	pr_err("%s: dpll_abe_x2_ck->rate is %lu\n", __func__,
 			dpll_abe_x2_ck->rate);
 
-
 #if 0
-
-	/*
-	 * XXX with my version of the kernel ABE fclk is still
-	 * (DPLL_ABE_X2_CK / 1).  Is this fixed in recent kernels from Misa?
-	 * Or do I still need to program it here?
-	 */
 	pr_err("%s: CKGEN_CM1.CM_CLKSEL_ABB.CLKSEL_OPP is 0x%x\n",
 			__func__, cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 				OMAP4_CM_CLKSEL_ABE_OFFSET));
@@ -409,42 +402,6 @@ int omap4_dpll_low_power_cascade_enter()
 		ret = -EINVAL;
 		goto out_clksel_opp;
 	}
-#endif
-
-	/* CONFIGURE EMIF */
-	/* bypass DPLL_CORE (reconfigures EMIF) */
-	//ret = omap4_core_dpll_m2_set_rate(dpll_core_m2_ck, dpll_core_ck->parent->parent->rate);
-	//ret = clk_set_rate(dpll_core_m2_ck, dpll_core_ck->parent->parent->rate);
-	//pr_err("%s: ret is %d\n", __func__, ret);
-
-	/*
-	 * bypass DPLLs for MPU, IVA, PER and USB.  These will be reparented
-	 * to DPLL_CORE later.
-	 */
-
-	/* program MPU & IVA bypass clock dividers to divide by 2 */
-	//ret = clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
-	//clk_set_rate(
-#if 0
-	pr_err("%s: div_mpu_hs_clk rate is 0x%lx, and clksel_reg contains 0x%lx\n",
-			__func__, clk_get_rate(div_mpu_hs_clk),
-			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-				div_mpu_hs_clk->clksel_reg));
-
-	pr_err("%s: div_iva_hs_clk rate is 0x%lx, and clksel_reg contains 0x%lx\n",
-			__func__, clk_get_rate(div_iva_hs_clk),
-			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-				div_iva_hs_clk->clksel_reg));
-#endif
-
-#if 0
-	/* bypass DPLL_MPU */
-	state.dpll_mpu_rate = clk_get_rate(dpll_mpu_ck);
-	omap3_noncore_dpll_set_rate(dpll_mpu_ck, dpll_mpu_ck->parent->rate);
-
-	/* bypass DPLL_IVA */
-	state.dpll_iva_rate = clk_get_rate(dpll_iva_ck);
-	omap3_noncore_dpll_set_rate(dpll_iva_ck, dpll_iva_ck->parent->rate);
 #endif
 
 	/* Program the MPU and IVA Bypass clock dividers for div by 2 */
