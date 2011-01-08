@@ -48,40 +48,6 @@ static struct dpll_cascade_saved_state {
 	u32 cm_clkmode_dpll_abe;
 } state;
 
-int omap4_dpll_regm4xen_enable(struct clk *clk)
-{
-	struct dpll_data *dd;
-
-	dd = clk->dpll_data;
-
-	/* set DPLL_ABE REGM4XEN bit */
-	cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
-			DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT,
-			OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-
-	dd->max_multiplier = OMAP4430_MAX_DPLL_MULT * OMAP4430_REGM4XEN_MULT;
-
-	return 0;
-}
-
-int omap4_dpll_regm4xen_disable(struct clk *clk)
-{
-	struct dpll_data *dd;
-
-	dd = clk->dpll_data;
-
-	/* unset DPLL_ABE REGM4XEN bit */
-	cm_rmw_mod_reg_bits(OMAP4430_DPLL_REGM4XEN_MASK,
-			0x0 << OMAP4430_DPLL_REGM4XEN_SHIFT,
-			OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-
-	dd->max_multiplier = OMAP4430_MAX_DPLL_MULT;
-
-	return 0;
-}
-
 /**
  * omap4_core_dpll_m2_set_rate - set CORE DPLL M2 divider
  * @clk: struct clk * of DPLL to set
@@ -278,12 +244,17 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 
 	dd = clk->dpll_data;
 
+	/* CM_CLKMODE_DPLL_x.REGM4XEN add 4x multiplier to MN dividers */
+	reg =__raw_readl(dd->control_reg);
+	reg &= OMAP4430_DPLL_REGM4XEN_MASK;
+	if (reg)
+		dd->max_multiplier = OMAP4430_MAX_DPLL_MULT * OMAP4430_REGM4XEN_MULT;
+	else
+		dd->max_multiplier = OMAP4430_MAX_DPLL_MULT;
+
 	omap2_dpll_round_rate(clk, target_rate);
 
-	/* regm4xen adds a multiplier of 4 to DPLL calculations */
-	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-	if (reg & (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT)) {
+	if (reg) {
 		/*
 		 * FIXME this is lazy; we only support values of M that are
 		 * divisible by 4 (a safe bet) and for which M/4 is >= 2
@@ -353,9 +324,6 @@ int omap4_dpll_low_power_cascade_enter()
 		goto out;
 	}
 
-	/* Device RET/OFF are not supported in DPLL cascading; gate them */
-	//omap3_dpll_deny_idle(dpll_abe_ck);
-
 	/* enable DPLL_ABE if not done already */
 	clk_enable(dpll_abe_ck);
 
@@ -381,36 +349,30 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* program DPLL_ABE for 196.608MHz */
 	/* set DPLL_ABE REGM4XEN bit */
-	omap4_dpll_regm4xen_enable(dpll_abe_ck);
-
-	pr_err("%s: ATTN: CLKMODE_DPLL_ABE is 0x%x\n", __func__,
-			cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-				OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET));
 
 	/* save CKGEN_CM1.CM_CLKMODE_DPLL_ABE */
-	mask =	(OMAP4430_DPLL_LPMODE_EN_MASK |
+	mask =	(OMAP4430_DPLL_REGM4XEN_MASK |
+		 OMAP4430_DPLL_LPMODE_EN_MASK |
 		 OMAP4430_DPLL_RELOCK_RAMP_EN_MASK |
 		 OMAP4430_DPLL_RAMP_RATE_MASK |
 		 OMAP4430_DPLL_DRIFTGUARD_EN_MASK);
 
-	pr_err("%s: ATT: mask is 0x%x\n", __func__, mask);
-
 	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
 			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
-	pr_err("%s: ATTN: reg is 0x%x\n", __func__, reg);
 	reg &= mask;
-	pr_err("%s: ATTN: reg is 0x%x\n", __func__, reg);
 	state.cm_clkmode_dpll_abe = reg;
 
 	mdelay(10);
 
 	/*
+	 * DPLL_ABE REGM4XEN Enable
 	 * DPLL_ABE LP Mode Enable
 	 * DPLL_ABE Relock Ramp Enable
 	 * DPLL_ABE Ramp Rate
 	 * DPLL_ABE Driftguard Enable
 	 */
-	reg = ((0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT) |
+	reg = ((0x1 << OMAP4430_DPLL_REGM4XEN_SHIFT) |
+	       (0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT) |
 	       (0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT) |
 	       (0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT) |
 	       (0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT));
