@@ -203,6 +203,57 @@ int omap4_set_freq_update(void)
 	return 0;
 }
 
+int omap4_noncore_dpll_mn_bypass(struct clk *clk)
+{
+	int i, ret = 0;
+	u32 reg, v;
+	struct dpll_data *dd;
+
+	dd = clk->dpll_data;
+
+	if (!(clk->dpll_data->modes & (1 << DPLL_MN_BYPASS)))
+		return -EINVAL;
+
+	pr_debug("%s: configuring DPLL %s for MN bypass\n",
+			__func__, clk->name);
+
+	/* protect the DPLL during programming; usecount++ */
+	clk_enable(dd->clk_bypass);
+
+	/* FIXME deny idle while in MN bypass; is this right? */
+	omap3_dpll_deny_idle(clk);
+
+	omap4_prm_rmw_reg_bits(dd->enable_mask,
+			(DPLL_MN_BYPASS << __ffs(dd->enable_mask)),
+			dd->control_reg);
+
+	/* wait for DPLL to enter bypass */
+	for (i = 0; i < 1000000; i++) {
+		reg = __raw_readl(dd->idlest_reg) & dd->mn_bypass_mask;
+		if (reg)
+			break;
+	}
+
+	if (reg) {
+		if (clk->usecount) {
+			/* DPLL is actually needed right now; usecount++ */
+			clk_enable(dd->clk_bypass);
+			clk_disable(clk->parent);
+		}
+		pr_err("%s: reparenting %s to %s, and setting old rate %lu to new rate %lu\n",
+				__func__, clk->name, dd->clk_bypass->name,
+				clk->rate, dd->clk_bypass->rate);
+		clk_reparent(clk, dd->clk_bypass);
+		clk->rate = dd->clk_bypass->rate;
+	} else
+		ret = -ENODEV;
+
+	/* done programming, no need to protect DPLL; usecount-- */
+	clk_disable(dd->clk_bypass);
+
+	return ret;
+}
+
 unsigned long omap4_dpll_regm4xen_recalc(struct clk *clk)
 {
 	unsigned long rate;
@@ -303,14 +354,14 @@ int omap4_dpll_low_power_cascade_enter()
 	}
 
 	/* Device RET/OFF are not supported in DPLL cascading; gate them */
-	omap3_dpll_deny_idle(dpll_abe_ck);
+	//omap3_dpll_deny_idle(dpll_abe_ck);
 
 	/* enable DPLL_ABE if not done already */
 	clk_enable(dpll_abe_ck);
 
 	/* bypass DPLL_ABE */
 	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
-	omap3_noncore_dpll_set_rate(dpll_abe_ck, dpll_abe_ck->parent->rate);
+	ret = omap4_noncore_dpll_mn_bypass(dpll_abe_ck);
 
 	if (ret) {
 		pr_debug("%s: DPLL_ABE failed to enter bypass\n", __func__);
@@ -324,7 +375,7 @@ int omap4_dpll_low_power_cascade_enter()
 	ret = clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
 
 	if (ret) {
-		pr_warn("%s: clk_get_parent returns %d\n", __func__, ret);
+		pr_warn("%s: clk_set_parent returns %d\n", __func__, ret);
 		goto dpll_abe_reparent_fail;
 	}
 
@@ -360,12 +411,11 @@ int omap4_dpll_low_power_cascade_enter()
 	 * DPLL_ABE Driftguard Enable
 	 */
 	reg = ((0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT) |
-			(0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT) |
-			(0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT) |
-			(0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT));
+	       (0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT) |
+	       (0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT) |
+	       (0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT));
 
-	cm_rmw_mod_reg_bits(mask, reg, OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+	omap4_prm_rmw_reg_bits(mask, reg, dpll_abe_ck->dpll_data->control_reg);
 
 	mdelay(10);
 	/*
@@ -385,24 +435,6 @@ int omap4_dpll_low_power_cascade_enter()
 			dpll_abe_ck->rate);
 	pr_err("%s: dpll_abe_x2_ck->rate is %lu\n", __func__,
 			dpll_abe_x2_ck->rate);
-
-#if 0
-	pr_err("%s: CKGEN_CM1.CM_CLKSEL_ABB.CLKSEL_OPP is 0x%x\n",
-			__func__, cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-				OMAP4_CM_CLKSEL_ABE_OFFSET));
-
-	/* divide 196.608MHz by 4 to get for AESS clock */
-	clk_set_rate(abe_clk, 49152000);
-
-	/* check if CLKSEL_OPP is 0x2 */
-	if(!(cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-					OMAP4_CM_CLKSEL_ABE_OFFSET) && 0x2)) {
-		pr_err("%s: CKGEN_CM1.CM_CLKSEL_ABB.CLKSEL_OPP is not 0x2\n",
-				__func__);
-		ret = -EINVAL;
-		goto out_clksel_opp;
-	}
-#endif
 
 	/* Program the MPU and IVA Bypass clock dividers for div by 2 */
 	reg = 0x1;
@@ -424,29 +456,30 @@ int omap4_dpll_low_power_cascade_enter()
 	 */
 	omap_emif_setup_registers(196608000 >> 1, LPDDR2_VOLTAGE_STABLE);
 
-	/* Disable auto-control for MPU and IVA PLL's */
-	reg = 0;
-	__raw_writel(reg, OMAP4430_CM_AUTOIDLE_DPLL_MPU);
-	__raw_writel(reg, OMAP4430_CM_AUTOIDLE_DPLL_IVA);
-
 	/* Now Put MPU and IVA PLL's in Bypass and Use Core PLL Clock as Bypass source*/
+	omap3_dpll_deny_idle(dpll_mpu_ck);
+	omap3_dpll_deny_idle(dpll_iva_ck);
 
-	reg = __raw_readl(OMAP4430_CM_CLKMODE_DPLL_MPU);
-	reg &= 0xFFFFFFF8;
-	reg |= 0x5;
-	__raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_MPU);
-	printk("cpufreq-omap: Successfully put the MPU DPLL into Bypass mode\n");
+	/* select CLKINPULOW as DPLL_IVA bypass clock */
+	clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
 
-	/* Change IVA DPLL bypass clock input to CLKINPULOW source */
-	reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_IVA);
-	reg |= (0x1 << 23);
-	__raw_writel(reg, OMAP4430_CM_CLKSEL_DPLL_IVA);
-
-	reg = __raw_readl(OMAP4430_CM_CLKMODE_DPLL_IVA);
-	reg &= 0xFFFFFFF8;
-	reg |= 0x5;
-	__raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_IVA);
-	printk("cpufreq-omap: Successfully put the IVA DPLL into Bypass mode\n");
+	/* bypass DPLL_MPU & DPLL_IVA */
+	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck,
+			dpll_mpu_ck->dpll_data->clk_bypass->rate);
+	if (ret) {
+		pr_debug("%s: DPLL_MPU failed to enter Low Power bypass\n",
+				__func__);
+		goto dpll_mpu_bypass_fail;
+	} else 
+		pr_debug("%s: DPLL_MPU entered Low Power bypass\n",__func__);
+	ret = omap3_noncore_dpll_set_rate(dpll_iva_ck,
+			dpll_iva_ck->dpll_data->clk_bypass->rate);
+	if (ret) {
+		pr_debug("%s: DPLL_IVA failed to enter Low Power bypass\n",
+				__func__);
+		goto dpll_iva_bypass_fail;
+	} else 
+		pr_debug("%s: DPLL_IVA entered Low Power bypass\n",__func__);
 
 	/* Now put PER PLL in Bypass and Use Core PLL Clock */
 	/* reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_PER);
@@ -492,6 +525,7 @@ int omap4_dpll_low_power_cascade_enter()
 	__raw_writel(reg, OMAP4430_CM_DIV_M5_DPLL_CORE);
 	printk("cpufreq-omap: Successfully changed the CORE DIV M5 divider setting\n");
 
+//#if 0
 	/* Set .parent field of dpll_abe_ck to update (in case DPLL was in Bypass before) */
 	omap2_init_dpll_parent(dpll_abe_ck);
 
@@ -521,6 +555,7 @@ int omap4_dpll_low_power_cascade_enter()
 	omap2_init_dpll_parent(dpll_mpu_ck);
 
 	recalculate_root_clocks();
+//#endif
 
 	/* DDR clock rate */
 	clk_rate = (unsigned long) clk_get_rate(dpll_core_m2_ck);
@@ -553,7 +588,8 @@ int omap4_dpll_low_power_cascade_enter()
 
 	goto out;
 
-out_clksel_opp:
+dpll_mpu_bypass_fail:
+dpll_iva_bypass_fail:
 dpll_abe_reparent_fail:
 dpll_abe_bypass_fail:
 	clk_set_rate(dpll_abe_ck, state.dpll_abe_rate);
