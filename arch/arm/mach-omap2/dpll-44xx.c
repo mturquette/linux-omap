@@ -389,15 +389,6 @@ int omap4_dpll_low_power_cascade_enter()
 	 */
 	clk_set_rate(dpll_abe_ck, 196608000 / 2);
 
-	pr_err("%s: clk_get_rate(dpll_abe_ck) is %lu\n",
-			__func__, clk_get_rate(dpll_abe_ck));
-	pr_err("%s: clk_get_rate(dpll_abe_x2_ck) is %lu\n",
-			__func__, clk_get_rate(dpll_abe_ck));
-	pr_err("%s: dpll_abe_ck->rate is %lu\n", __func__,
-			dpll_abe_ck->rate);
-	pr_err("%s: dpll_abe_x2_ck->rate is %lu\n", __func__,
-			dpll_abe_x2_ck->rate);
-
 	/* Program the MPU and IVA Bypass clock dividers for div by 2 */
 	reg = 0x1;
 	__raw_writel(reg, OMAP4430_CM_BYPCLK_DPLL_MPU);
@@ -487,10 +478,6 @@ int omap4_dpll_low_power_cascade_enter()
 	__raw_writel(reg, OMAP4430_CM_DIV_M5_DPLL_CORE);
 	printk("cpufreq-omap: Successfully changed the CORE DIV M5 divider setting\n");
 
-//#if 0
-	/* Set .parent field of dpll_abe_ck to update (in case DPLL was in Bypass before) */
-	omap2_init_dpll_parent(dpll_abe_ck);
-
 	/* Set .parent field of core_hsd_byp_clk_mux_ck to update to the latest */
 	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
 	if (!core_hsd_byp_clk_mux_ck) {
@@ -502,22 +489,7 @@ int omap4_dpll_low_power_cascade_enter()
 	/* Set .parent field of dpll_core_ck to update to the latest */
 	omap2_init_dpll_parent(dpll_core_ck);
 
-	/* Set .parent field of iva_hsd_byp_clk_mux_ck to update to the latest */
-	iva_hsd_byp_clk_mux_ck = clk_get(NULL, "iva_hsd_byp_clk_mux_ck");
-	if (!iva_hsd_byp_clk_mux_ck) {
-		printk("Could not get IVA HSD Bypass clock - iva_hsd_byp_clk_mux_ck\n");
-	} else {
-		omap2_init_clksel_parent(iva_hsd_byp_clk_mux_ck);
-	}
-
-	/* Set .parent field of dpll_iva_ck to update to the latest */
-	omap2_init_dpll_parent(dpll_iva_ck);
-
-	/* Set .parent field of dpll_mpu_ck to update to the latest */
-	omap2_init_dpll_parent(dpll_mpu_ck);
-
 	recalculate_root_clocks();
-//#endif
 
 	/* DDR clock rate */
 	clk_rate = (unsigned long) clk_get_rate(dpll_core_m2_ck);
