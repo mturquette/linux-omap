@@ -403,10 +403,8 @@ int omap4_dpll_low_power_cascade_enter()
 	}
 
 	/* Program the MPU and IVA Bypass clock dividers for div by 2 */
-	reg = 0x1;
-	__raw_writel(reg, OMAP4430_CM_BYPCLK_DPLL_MPU);
-	__raw_writel(reg, OMAP4430_CM_BYPCLK_DPLL_IVA);
-	printk("cpufreq-omap: Successfully changed the MPU & IVA clock dividers\n");
+	clk_set_rate(div_mpu_hs_clk, div_mpu_hs_clk->parent->rate / 2);
+	clk_set_rate(div_iva_hs_clk, div_iva_hs_clk->parent->rate / 2);
 
 	/* Configure EMIF Memory Interface */
 	printk("cpufreq-omap: Now changing the EMIF clock rate setting for DPLL cascading...\n");
