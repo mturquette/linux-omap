@@ -402,7 +402,7 @@ int omap4_dpll_low_power_cascade_enter()
 		goto dpll_abe_relock_fail;
 	}
 
-	/* Program the MPU and IVA Bypass clock dividers for div by 2 */
+	/* divide MPU/IVA bypass clocks by 2 (for when we bypass DPLL_CORE) */
 	clk_set_rate(div_mpu_hs_clk, div_mpu_hs_clk->parent->rate / 2);
 	clk_set_rate(div_iva_hs_clk, div_iva_hs_clk->parent->rate / 2);
 
@@ -420,11 +420,11 @@ int omap4_dpll_low_power_cascade_enter()
 	 */
 	omap_emif_setup_registers(196608000 >> 1, LPDDR2_VOLTAGE_STABLE);
 
-	/* Now Put MPU and IVA PLL's in Bypass and Use Core PLL Clock as Bypass source*/
+	/* prevent DPLL_MPU & DPLL_IVA from idling */
 	omap3_dpll_deny_idle(dpll_mpu_ck);
 	omap3_dpll_deny_idle(dpll_iva_ck);
 
-	/* select CLKINPULOW as DPLL_IVA bypass clock */
+	/* select CLKINPULOW (div_iva_hs_clk) as DPLL_IVA bypass clock */
 	clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
 
 	/* bypass DPLL_MPU */
