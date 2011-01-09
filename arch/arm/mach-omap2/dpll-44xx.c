@@ -408,8 +408,6 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* Configure EMIF Memory Interface */
 	printk("cpufreq-omap: Now changing the EMIF clock rate setting for DPLL cascading...\n");
-	//validrate = 196608000;
-	/* validrate = 98304000; */
 	l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
 	/* Configures MEMIF domain in SW_WKUP */
 	omap2_clkdm_wakeup(l3_emif_clkdm);
@@ -477,6 +475,7 @@ int omap4_dpll_low_power_cascade_enter()
 	__raw_writel(reg, OMAP4430_CM_CLKSEL_CORE);
 	printk("cpufreq-omap: Successfully changed the CORE CLK divider setting\n");
 
+#if 0
 	/* Update SHADOW register for proper CORE DPLL and EMIF config updates */
 	reg = (0x2 << 11) | (0x5 << 8) | (0x1 << 3);
 	__raw_writel(reg, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
@@ -485,6 +484,15 @@ int omap4_dpll_low_power_cascade_enter()
 	while (((reg = __raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1)) & 0x1) != 0x0)
 		printk("cpufreq-omap: Waiting for CORE DPLL config to update...\n");
 	printk("cpufreq-omap: Successfully updated the CORE DPLL Shadow Register\n");
+#endif
+
+	/*
+	 * XXX should really omap4_core_dpll_m2_set_rate here...
+	 * should really be clk_set_rate(core_m2); here...
+	 */
+	reg = (0x2 << 11) | (0x5 << 8);
+	__raw_writel(reg, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
+	omap4_set_freq_update();
 
 	/* Update CORE DPLL divider value for M5 output */
 	reg = 0x1;
