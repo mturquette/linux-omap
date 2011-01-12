@@ -156,7 +156,7 @@ struct dpll_data {
 	u32			autoidle_mask;
 	u32			freqsel_mask;
 	u32			idlest_mask;
-	u32			mn_bypass_mask;
+	u32			mn_bypass_st_mask;
 	u8			auto_recal_bit;
 	u8			recal_en_bit;
 	u8			recal_st_bit;

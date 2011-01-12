@@ -186,9 +186,6 @@ int omap4_noncore_dpll_mn_bypass(struct clk *clk)
 	/* protect the DPLL during programming; usecount++ */
 	clk_enable(dd->clk_bypass);
 
-	/* FIXME deny idle while in MN bypass; is this right? */
-	omap3_dpll_deny_idle(clk);
-
 	omap4_prm_rmw_reg_bits(dd->enable_mask,
 			(DPLL_MN_BYPASS << __ffs(dd->enable_mask)),
 			dd->control_reg);
@@ -228,8 +225,7 @@ unsigned long omap4_dpll_regm4xen_recalc(struct clk *clk)
 	rate = omap2_get_dpll_rate(clk);
 
 	/* regm4xen adds a multiplier of 4 to DPLL calculations */
-	reg = cm_read_mod_reg(OMAP4430_CM1_CKGEN_MOD,
-			OMAP4_CM_CLKMODE_DPLL_ABE_OFFSET);
+	reg = __raw_readl(dd->control_reg);
 	if (reg & (DPLL_REGM4XEN_ENABLE << OMAP4430_DPLL_REGM4XEN_SHIFT))
 		rate *= OMAP4430_REGM4XEN_MULT;
 
@@ -282,10 +278,10 @@ out:
 /**
  * omap4_dpll_low_power_cascade - configure system for low power DPLL cascade
  *
- * The low power DPLL cascading scheme is a way to have mostly functional
+ * The low power DPLL cascading scheme is a way to have a mostly functional
  * system running with only one locked DPLL and all of the others in bypass.
  * While this might be useful for many use cases, the primary target is low
- * power audio playback.  The steps to enter this start roughly are:
+ * power audio playback.  The steps to enter this state are roughly:
  *
  * Reparent DPLL_ABE so that it is fed by SYS_32K_CK
  * Set magical REGM4XEN bit so DPLL_ABE MN dividers are multiplied by four
@@ -335,6 +331,7 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* bypass DPLL_ABE */
 	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
+	omap3_dpll_deny_idle(clk);
 	ret = omap4_noncore_dpll_mn_bypass(dpll_abe_ck);
 
 	if (ret) {
