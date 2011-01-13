@@ -175,6 +175,9 @@ int omap4_noncore_dpll_mn_bypass(struct clk *clk)
 	u32 reg, v;
 	struct dpll_data *dd;
 
+	if (!clk || !clk->dpll_data)
+		return -EINVAL;
+
 	dd = clk->dpll_data;
 
 	if (!(clk->dpll_data->modes & (1 << DPLL_MN_BYPASS)))
@@ -192,7 +195,7 @@ int omap4_noncore_dpll_mn_bypass(struct clk *clk)
 
 	/* wait for DPLL to enter bypass */
 	for (i = 0; i < 1000000; i++) {
-		reg = __raw_readl(dd->idlest_reg) & dd->mn_bypass_mask;
+		reg = __raw_readl(dd->idlest_reg) & dd->mn_bypass_st_mask;
 		if (reg)
 			break;
 	}
@@ -221,6 +224,12 @@ unsigned long omap4_dpll_regm4xen_recalc(struct clk *clk)
 {
 	unsigned long rate;
 	u32 reg;
+	struct dpll_data *dd;
+
+	if (!clk || !clk->dpll_data)
+		return -EINVAL;
+
+	dd = clk->dpll_data;
 
 	rate = omap2_get_dpll_rate(clk);
 
@@ -331,7 +340,7 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* bypass DPLL_ABE */
 	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
-	omap3_dpll_deny_idle(clk);
+	omap3_dpll_deny_idle(dpll_abe_ck);
 	ret = omap4_noncore_dpll_mn_bypass(dpll_abe_ck);
 
 	if (ret) {
