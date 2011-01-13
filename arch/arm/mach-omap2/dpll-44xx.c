@@ -412,18 +412,6 @@ int omap4_dpll_low_power_cascade_enter()
 	clk_set_rate(div_mpu_hs_clk, div_mpu_hs_clk->parent->rate / 2);
 	clk_set_rate(div_iva_hs_clk, div_iva_hs_clk->parent->rate / 2);
 
-	/* Configure EMIF Memory Interface */
-	printk("cpufreq-omap: Now changing the EMIF clock rate setting for DPLL cascading...\n");
-	l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
-	/* Configures MEMIF domain in SW_WKUP */
-	omap2_clkdm_wakeup(l3_emif_clkdm);
-	/*
-	 * Program EMIF timing parameters in EMIF shadow registers
-	 * for targetted DRR clock.
-	 * DDR Clock = core_dpll_m2 / 2
-	 */
-	omap_emif_setup_registers(196608000 >> 1, LPDDR2_VOLTAGE_STABLE);
-
 	/* prevent DPLL_MPU & DPLL_IVA from idling */
 	omap3_dpll_deny_idle(dpll_mpu_ck);
 	omap3_dpll_deny_idle(dpll_iva_ck);
@@ -461,15 +449,6 @@ int omap4_dpll_low_power_cascade_enter()
 	   __raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_PER);
 	   printk("cpufreq-omap: Successfully put the PER DPLL into Bypass mode\n"); */
 
-	/* reg = 0x1; */  /* For divide-by-2 on other functional clocks */
-	reg = 0; /* Keep divide-by-1 for other functional clocks */
-	__raw_writel(reg, OMAP4430_CM_SCALE_FCLK);
-
-	/* Now Put CORE PLL In Bypass and Use the ABE o/p clock */
-
-	reg = 0x2;
-	__raw_writel(reg, OMAP4430_CM_MEMIF_CLKSTCTRL);
-
 	/* Change bypass clock input to CLKINPULOW source */
 	reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_CORE);
 	reg |= (0x1 << 23);
@@ -480,6 +459,28 @@ int omap4_dpll_low_power_cascade_enter()
 	reg &= 0xFFFFFFF0;
 	__raw_writel(reg, OMAP4430_CM_CLKSEL_CORE);
 	printk("cpufreq-omap: Successfully changed the CORE CLK divider setting\n");
+
+	/* Configure EMIF Memory Interface */
+	l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
+	/* Configures MEMIF domain in SW_WKUP */
+	omap2_clkdm_wakeup(l3_emif_clkdm);
+	/*
+	 * Program EMIF timing parameters in EMIF shadow registers
+	 * for targetted DRR clock.
+	 * DDR Clock = core_dpll_m2 / 2
+	 */
+	omap_emif_setup_registers(196608000 >> 1, LPDDR2_VOLTAGE_STABLE);
+
+	mdelay(10);
+
+	/* reg = 0x1; */  /* For divide-by-2 on other functional clocks */
+	reg = 0; /* Keep divide-by-1 for other functional clocks */
+	__raw_writel(reg, OMAP4430_CM_SCALE_FCLK);
+
+	/* Now Put CORE PLL In Bypass and Use the ABE o/p clock */
+
+	reg = 0x2;
+	__raw_writel(reg, OMAP4430_CM_MEMIF_CLKSTCTRL);
 
 #if 0
 	/* Update SHADOW register for proper CORE DPLL and EMIF config updates */
