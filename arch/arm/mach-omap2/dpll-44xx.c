@@ -304,11 +304,12 @@ int omap4_dpll_low_power_cascade_enter()
 	u32 reg, mask;
 	int i;
 	struct clk *sys_32k_ck, *sys_clkin_ck;
-	struct clk *dpll_abe_ck, *dpll_abe_x2_ck;
+	struct clk *dpll_abe_ck, *dpll_abe_x2_ck, *dpll_abe_m3x2_ck;
 	struct clk *abe_clk, *abe_dpll_refclk_mux_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
-	struct clk *dpll_core_ck, *dpll_core_m2_ck, *core_hsd_byp_clk_mux_ck;
+	struct clk *dpll_core_ck, *dpll_core_x2_ck, *dpll_core_m2_ck;
+	struct clk *core_hsd_byp_clk_mux_ck, *div_core_ck;
 	unsigned long clk_rate;
 
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
@@ -324,12 +325,18 @@ int omap4_dpll_low_power_cascade_enter()
 	iva_hsd_byp_clk_mux_ck = clk_get(NULL, "iva_hsd_byp_clk_mux_ck");
 	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
 	dpll_core_m2_ck = clk_get(NULL, "dpll_core_ck");
+	dpll_abe_m3x2_ck = clk_get(NULL, "dpll_abe_m3x2_ck");
+	dpll_core_x2_ck = clk_get(NULL, "dpll_core_x2_ck");
+	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
+	div_core_ck = clk_get(NULL, "div_core_ck");
 
 	if (!dpll_abe_ck || !dpll_abe_x2_ck || !sys_32k_ck || !sys_clkin_ck ||
 			!abe_clk || !abe_dpll_refclk_mux_ck || !dpll_mpu_ck ||
 			!div_mpu_hs_clk || !dpll_iva_ck || !div_iva_hs_clk ||
 			!iva_hsd_byp_clk_mux_ck || !dpll_core_ck ||
-			!dpll_core_m2_ck) {
+			!dpll_core_m2_ck || !dpll_abe_m3x2_ck ||
+			!div_core_ck || !dpll_core_x2_ck ||
+			!core_hsd_byp_clk_mux_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -449,16 +456,11 @@ int omap4_dpll_low_power_cascade_enter()
 	   __raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_PER);
 	   printk("cpufreq-omap: Successfully put the PER DPLL into Bypass mode\n"); */
 
-	/* Change bypass clock input to CLKINPULOW source */
-	reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_CORE);
-	reg |= (0x1 << 23);
-	__raw_writel(reg, OMAP4430_CM_CLKSEL_DPLL_CORE);
+	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
+	clk_set_parent(core_hsd_byp_clk_mux_ck, dpll_abe_m3x2_ck);
 
-	/* Zero out CLKSEL_CORE divider to make CORE_CLK = CORE_X2_CLK */
-	reg = __raw_readl(OMAP4430_CM_CLKSEL_CORE);
-	reg &= 0xFFFFFFF0;
-	__raw_writel(reg, OMAP4430_CM_CLKSEL_CORE);
-	printk("cpufreq-omap: Successfully changed the CORE CLK divider setting\n");
+	/* CORE_CLK = CORE_X2_CLK */
+	clk_set_rate(div_core_ck, dpll_core_x2_ck->rate);
 
 	/* Configure EMIF Memory Interface */
 	l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
