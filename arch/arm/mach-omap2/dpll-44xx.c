@@ -342,78 +342,9 @@ int omap4_dpll_low_power_cascade_enter()
 		goto out;
 	}
 
-	/* enable DPLL_ABE if not done already; usecount++ */
+	/* enable DPLL_ABE and keep it on; usecount++ */
 	clk_enable(dpll_abe_ck);
-
-	/* bypass DPLL_ABE */
-	state.dpll_abe_rate = clk_get_rate(dpll_abe_ck);
 	omap3_dpll_deny_idle(dpll_abe_ck);
-	ret = omap4_noncore_dpll_mn_bypass(dpll_abe_ck);
-
-	if (ret) {
-		pr_debug("%s: DPLL_ABE failed to enter bypass\n", __func__);
-		goto dpll_abe_bypass_fail;
-	} else
-		pr_debug("%s: DPLL_ABE bypassed successfully\n", __func__);
-
-	/* set SYS_32K_CK as input to DPLL_ABE */
-	state.abe_dpll_refclk_mux_ck_parent =
-		clk_get_parent(abe_dpll_refclk_mux_ck);
-	ret = clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
-
-	if (ret) {
-		pr_warn("%s: clk_set_parent returns %d\n", __func__, ret);
-		goto dpll_abe_reparent_fail;
-	}
-
-	/*
-	 * Before re-locking DPLL_ABE at 196.608MHz CM_CLKMODE_DPLL_ABE needs
-	 * to be configured specifically for DPLL cascading and for being fed
-	 * from 32KHz timer.  First save the inital register contents for
-	 * later on, then program the new values all at once.
-	 */
-	mask =	(OMAP4430_DPLL_REGM4XEN_MASK |
-		 OMAP4430_DPLL_LPMODE_EN_MASK |
-		 OMAP4430_DPLL_RELOCK_RAMP_EN_MASK |
-		 OMAP4430_DPLL_RAMP_RATE_MASK |
-		 OMAP4430_DPLL_DRIFTGUARD_EN_MASK);
-
-	reg = __raw_readl(dpll_abe_ck->dpll_data->control_reg);
-	reg &= mask;
-	state.cm_clkmode_dpll_abe = reg;
-
-	mdelay(10);
-
-	/*
-	 * DPLL_ABE REGM4XEN Enable
-	 * DPLL_ABE LP Mode Enable
-	 * DPLL_ABE Relock Ramp Enable
-	 * DPLL_ABE Ramp Rate
-	 * DPLL_ABE Driftguard Enable
-	 */
-	reg = ((0x1 << OMAP4430_DPLL_REGM4XEN_SHIFT) |
-	       (0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT) |
-	       (0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT) |
-	       (0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT) |
-	       (0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT));
-
-	omap4_prm_rmw_reg_bits(mask, reg, dpll_abe_ck->dpll_data->control_reg);
-
-	mdelay(10);
-
-	/*
-	 * XXX on OMAP4 the DPLL_n_X2 clocks are not twice the speed of the
-	 * DPLL.  Instead they reflect the actual output of the DPLL and the
-	 * non-X2 clocks are half of that output.  It would be preferable to
-	 * set the rate of dpll_abe_x2_ck but that clock doesn't have any
-	 * clock ops.  Program dpll_abe_ck for half of the desired rate
-	 * instead.
-	 */
-	ret = clk_set_rate(dpll_abe_ck, 196608000 / 2);
-	if (ret) {
-		pr_warn("%s: failed to lock DPLL_ABE\n", __func__);
-		goto dpll_abe_relock_fail;
-	}
 
 	/* divide MPU/IVA bypass clocks by 2 (for when we bypass DPLL_CORE) */
 	clk_set_rate(div_mpu_hs_clk, div_mpu_hs_clk->parent->rate / 2);
