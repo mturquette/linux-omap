@@ -310,6 +310,7 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *dpll_core_ck, *dpll_core_x2_ck;
 	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck;
 	struct clk *core_hsd_byp_clk_mux_ck, *div_core_ck;
+	struct clk *func_48m_fclk;
 	unsigned long clk_rate;
 
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
@@ -330,6 +331,7 @@ int omap4_dpll_low_power_cascade_enter()
 	dpll_core_x2_ck = clk_get(NULL, "dpll_core_x2_ck");
 	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
 	div_core_ck = clk_get(NULL, "div_core_ck");
+	func_48m_fclk = clk_get(NULL, "func_48m_fclk");
 
 	if (!dpll_abe_ck || !dpll_abe_x2_ck || !sys_32k_ck || !sys_clkin_ck ||
 			!abe_clk || !abe_dpll_refclk_mux_ck || !dpll_mpu_ck ||
@@ -337,7 +339,8 @@ int omap4_dpll_low_power_cascade_enter()
 			!iva_hsd_byp_clk_mux_ck || !dpll_core_ck ||
 			!dpll_core_m2_ck || !dpll_abe_m3x2_ck ||
 			!div_core_ck || !dpll_core_x2_ck ||
-			!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck) {
+			!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
+			!func_48m_fclk) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -396,40 +399,23 @@ int omap4_dpll_low_power_cascade_enter()
 
 	clk_set_rate(dpll_core_m2_ck, 196608000);
 
+#if 0
 	/* reg = 0x1; */  /* For divide-by-2 on other functional clocks */
 	reg = 0; /* Keep divide-by-1 for other functional clocks */
 	__raw_writel(reg, OMAP4430_CM_SCALE_FCLK);
-
-	/* Update CORE DPLL divider value for M5 output */
-#if 0
-	reg = 0x1;
-	__raw_writel(reg, OMAP4430_CM_DIV_M5_DPLL_CORE);
 #else
-	pr_err("%s: dpll_core_x2_ck rate is %lu\n",
-			__func__, clk_get_rate(dpll_core_x2_ck));
+	ret = clk_set_rate(func_48m_fclk, 49152000);
+	pr_err("%s: ret is %d\n", __func__, ret);
+	/* fuck, ret is -22 */
+	/*func_64m_fclk
+	func_96m_fclk
+	per_abe_nc_fclk*/
+#endif
+
 	clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
-#endif
-
-	printk("cpufreq-omap: Successfully changed the CORE DIV M5 divider setting\n");
-
-#if 0
-	/* Set .parent field of core_hsd_byp_clk_mux_ck to update to the latest */
-	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
-	if (!core_hsd_byp_clk_mux_ck) {
-		printk("Could not get CORE HSD Bypass clock - core_hsd_byp_clk_mux_ck\n");
-	} else {
-		omap2_init_clksel_parent(core_hsd_byp_clk_mux_ck);
-	}
-
-	/* Set .parent field of dpll_core_ck to update to the latest */
-	omap2_init_dpll_parent(dpll_core_ck);
-#endif
-
-	recalculate_root_clocks();
 
 	/* DDR clock rate */
 	clk_rate = (unsigned long) clk_get_rate(dpll_core_m2_ck);
-	printk("Latest DPLL_CORE_M2_CK (EMIF source) is %ld Hz\n", clk_rate);
 
 	/* Configures MEMIF domain back to HW_WKUP */
 	//omap2_clkdm_allow_idle(l3_emif_clkdm);
@@ -453,8 +439,6 @@ int omap4_dpll_low_power_cascade_enter()
 
 	reg = 0x3;
 	__raw_writel(reg, OMAP4430_CM_EMU_CLKSTCTRL);
-
-	printk("cpufreq-omap: Done forcing DPLL Cascading\n");
 
 	goto out;
 
