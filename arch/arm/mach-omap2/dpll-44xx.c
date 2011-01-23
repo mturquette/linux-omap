@@ -399,18 +399,10 @@ int omap4_dpll_low_power_cascade_enter()
 
 	clk_set_rate(dpll_core_m2_ck, 196608000);
 
-#if 0
-	/* reg = 0x1; */  /* For divide-by-2 on other functional clocks */
-	reg = 0; /* Keep divide-by-1 for other functional clocks */
-	__raw_writel(reg, OMAP4430_CM_SCALE_FCLK);
-#else
-	ret = clk_set_rate(func_48m_fclk, 49152000);
-	pr_err("%s: ret is %d\n", __func__, ret);
-	/* fuck, ret is -22 */
+	ret = clk_set_rate(func_48m_fclk, 48000000);
 	/*func_64m_fclk
 	func_96m_fclk
 	per_abe_nc_fclk*/
-#endif
 
 	clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
 
