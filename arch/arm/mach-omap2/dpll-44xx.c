@@ -308,9 +308,12 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
 	struct clk *dpll_core_ck, *dpll_core_x2_ck;
-	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck;
+	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck, *dpll_core_m6x2_ck;
 	struct clk *core_hsd_byp_clk_mux_ck, *div_core_ck;
 	struct clk *func_48m_fclk;
+	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
+	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
+	struct clockdomain *emu_sys_44xx_clkdm;
 	unsigned long clk_rate;
 
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
@@ -327,11 +330,18 @@ int omap4_dpll_low_power_cascade_enter()
 	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
 	dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
 	dpll_core_m5x2_ck = clk_get(NULL, "dpll_core_m5x2_ck");
+	dpll_core_m6x2_ck = clk_get(NULL, "dpll_core_m6x2_ck");
 	dpll_abe_m3x2_ck = clk_get(NULL, "dpll_abe_m3x2_ck");
 	dpll_core_x2_ck = clk_get(NULL, "dpll_core_x2_ck");
 	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
 	div_core_ck = clk_get(NULL, "div_core_ck");
 	func_48m_fclk = clk_get(NULL, "func_48m_fclk");
+	l4_wkup_clk_mux_ck = clk_get(NULL, "l4_wkup_clk_mux_ck");
+	lp_clk_div_ck = clk_get(NULL, "lp_clk_div_ck");
+	pmd_stm_clock_mux_ck = clk_get(NULL, "pmd_stm_clock_mux_ck");
+	pmd_trace_clk_mux_ck = clk_get(NULL, "pmd_trace_clk_mux_ck");
+
+	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
 
 	if (!dpll_abe_ck || !dpll_abe_x2_ck || !sys_32k_ck || !sys_clkin_ck ||
 			!abe_clk || !abe_dpll_refclk_mux_ck || !dpll_mpu_ck ||
@@ -340,7 +350,9 @@ int omap4_dpll_low_power_cascade_enter()
 			!dpll_core_m2_ck || !dpll_abe_m3x2_ck ||
 			!div_core_ck || !dpll_core_x2_ck ||
 			!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
-			!func_48m_fclk) {
+			!func_48m_fclk || !l4_wkup_clk_mux_ck ||
+			!lp_clk_div_ck || !pmd_stm_clock_mux_ck ||
+			!pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -399,38 +411,50 @@ int omap4_dpll_low_power_cascade_enter()
 
 	clk_set_rate(dpll_core_m2_ck, 196608000);
 
-	ret = clk_set_rate(func_48m_fclk, 48000000);
-	/*func_64m_fclk
-	func_96m_fclk
-	per_abe_nc_fclk*/
-
 	clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
 
 	/* DDR clock rate */
 	clk_rate = (unsigned long) clk_get_rate(dpll_core_m2_ck);
 
-	/* Configures MEMIF domain back to HW_WKUP */
-	//omap2_clkdm_allow_idle(l3_emif_clkdm);
-
 	/* Let HW control ABE DPLL now, since we have the DPLL's chained */
+#if 0
 	reg = 0x1;
 	__raw_writel(reg, OMAP4430_CM_AUTOIDLE_DPLL_ABE);
+#else
+	omap3_dpll_allow_idle(dpll_abe_ck);
+#endif
 
 	/* Move PRM from SYS Clock to ABE LP Clock and ABE Bypass clock to 32kHz */
+#if 0
 	reg = 0x1;
 	__raw_writel(reg, OMAP4430_CM_L4_WKUP_CLKSEL);
+#else
+	/*
+	 * use ABE_LP_CLK to drive L4WKUP_ICLK and use 32K_FCLK to drive
+	 * ABE_DPLL_BYPASS_CLK
+	 */
+	clk_set_parent(l4_wkup_clk_mux_ck, lp_clk_div_ck);
+#endif
 
-	/* Program the CLKREQCTRL in PRM */
-	reg = 0;
-	__raw_writel(reg, OMAP4430_PRM_CLKREQCTRL);
+	/* never de-assert CLKREQ while in DPLL cascading scheme */
+	__raw_writel(0x0, OMAP4430_PRM_CLKREQCTRL);
 
+#if 0
 	/* Program emu cd to HW-AUTO mode and change clock source */
 	reg = __raw_readl(OMAP4430_CM_EMU_DEBUGSS_CLKCTRL);
 	reg |= (0x1 << 22) | (0x1 << 20);
 	__raw_writel(reg, OMAP4430_CM_EMU_DEBUGSS_CLKCTRL);
+#else
+	clk_set_parent(pmd_stm_clock_mux_ck, dpll_core_m6x2_ck);
+	clk_set_parent(pmd_trace_clk_mux_ck, dpll_core_m6x2_ck);
+#endif
 
+#if 0
 	reg = 0x3;
 	__raw_writel(reg, OMAP4430_CM_EMU_CLKSTCTRL);
+#else
+	omap2_clkdm_allow_idle(emu_sys_44xx_clkdm);
+#endif
 
 	goto out;
 
