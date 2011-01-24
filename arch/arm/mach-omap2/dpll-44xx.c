@@ -403,7 +403,7 @@ int omap4_dpll_low_power_cascade_enter()
 	state.dpll_core_m2_ck_rate = dpll_core_m2_ck->rate;
 	state.dpll_core_m5x2_ck_rate = dpll_core_m5x2_ck->rate;
 
-	ret =  clk_set_rate(div_core_ck, dpll_core_x2_ck->rate);
+	ret =  clk_set_rate(div_core_ck, dpll_core_m5x2_ck->rate);
 	ret |= clk_set_rate(dpll_core_m2_ck, 196608000);
 	ret |= clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
 	if (ret) {
