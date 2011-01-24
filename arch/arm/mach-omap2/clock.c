@@ -22,7 +22,9 @@
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/bitops.h>
+#include <trace/events/power.h>
 
+#include <asm/cpu.h>
 #include <plat/clock.h>
 #include "clockdomain.h"
 #include <plat/cpu.h>
@@ -261,6 +263,7 @@ void omap2_clk_disable(struct clk *clk)
 
 	pr_debug("clock: %s: disabling in hardware\n", clk->name);
 
+	trace_clock_disable(clk->name, 0, smp_processor_id());
 	clk->ops->disable(clk);
 
 	if (clk->clkdm)
@@ -312,6 +315,7 @@ int omap2_clk_enable(struct clk *clk)
 		}
 	}
 
+	trace_clock_enable(clk->name, 1, smp_processor_id());
 	ret = clk->ops->enable(clk);
 	if (ret) {
 		WARN(1, "clock: %s: could not enable: %d\n", clk->name, ret);
@@ -349,8 +353,10 @@ int omap2_clk_set_rate(struct clk *clk, unsigned long rate)
 	pr_debug("clock: set_rate for clock %s to rate %ld\n", clk->name, rate);
 
 	/* dpll_ck, core_ck, virt_prcm_set; plus all clksel clocks */
-	if (clk->set_rate)
+	if (clk->set_rate) {
+		trace_clock_set_rate(clk->name, rate, smp_processor_id());
 		ret = clk->set_rate(clk, rate);
+	}
 
 	return ret;
 }

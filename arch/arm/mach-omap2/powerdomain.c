@@ -19,12 +19,15 @@
 #include <linux/list.h>
 #include <linux/errno.h>
 #include <linux/string.h>
+#include <trace/events/power.h>
+
 #include "cm2xxx_3xxx.h"
 #include "prcm44xx.h"
 #include "cm44xx.h"
 #include "prm2xxx_3xxx.h"
 #include "prm44xx.h"
 
+#include <asm/cpu.h>
 #include <plat/cpu.h>
 #include "powerdomain.h"
 #include "clockdomain.h"
@@ -406,8 +409,11 @@ int pwrdm_set_next_pwrst(struct powerdomain *pwrdm, u8 pwrst)
 	pr_debug("powerdomain: setting next powerstate for %s to %0x\n",
 		 pwrdm->name, pwrst);
 
-	if (arch_pwrdm && arch_pwrdm->pwrdm_set_next_pwrst)
+	if (arch_pwrdm && arch_pwrdm->pwrdm_set_next_pwrst) {
+		trace_power_domain_target(pwrdm->name, pwrst,
+					  smp_processor_id());
 		ret = arch_pwrdm->pwrdm_set_next_pwrst(pwrdm, pwrst);
+	}
 
 	return ret;
 }
