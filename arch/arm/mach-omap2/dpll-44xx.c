@@ -62,7 +62,6 @@ static struct dpll_cascade_saved_state {
  */
 int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 {
-	int i = 0;
 	u32 validrate = 0, shadow_freq_cfg1 = 0, new_div = 0;
 	struct clk *dpll_core_ck;
 	struct dpll_data *dd;
@@ -171,7 +170,7 @@ int omap4_set_freq_update(void)
 int omap4_noncore_dpll_mn_bypass(struct clk *clk)
 {
 	int i, ret = 0;
-	u32 reg, v;
+	u32 reg;
 	struct dpll_data *dd;
 
 	if (!clk || !clk->dpll_data)
@@ -242,13 +241,12 @@ unsigned long omap4_dpll_regm4xen_recalc(struct clk *clk)
 
 long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 {
-	long ret;
 	u32 reg;
 	struct dpll_data *dd;
 
 	dd = clk->dpll_data;
 
-	/* CM_CLKMODE_DPLL_n.REGM4XEN add 4x multiplier to MN dividers */
+	/* REGM4XEN add 4x multiplier to MN dividers; check if it is set */
 	reg =__raw_readl(dd->control_reg);
 	reg &= OMAP4430_DPLL_REGM4XEN_MASK;
 	if (reg)
@@ -274,7 +272,6 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 		dd->last_rounded_m /= OMAP4430_REGM4XEN_MULT;
 	}
 
-out:
 	pr_debug("%s: last_rounded_m is %d, last_rounded_n is %d, last_rounded_rate is %lu\n",
 			__func__, clk->dpll_data->last_rounded_m,
 			clk->dpll_data->last_rounded_n,
@@ -300,8 +297,6 @@ out:
 int omap4_dpll_low_power_cascade_enter()
 {
 	int ret = 0;
-	u32 reg, mask;
-	int i;
 	struct clk *sys_32k_ck, *sys_clkin_ck;
 	struct clk *dpll_abe_ck, *dpll_abe_x2_ck, *dpll_abe_m3x2_ck;
 	struct clk *abe_clk, *abe_dpll_refclk_mux_ck;
@@ -393,16 +388,6 @@ int omap4_dpll_low_power_cascade_enter()
 	} else 
 		pr_debug("%s: DPLL_IVA entered Low Power bypass\n",__func__);
 
-	/* Now put PER PLL in Bypass and Use Core PLL Clock */
-	/* reg = __raw_readl(OMAP4430_CM_CLKSEL_DPLL_PER);
-	   reg |= (0x1 << 23);
-	   __raw_writel(reg, OMAP4430_CM_CLKSEL_DPLL_PER);
-	   reg = __raw_readl(OMAP4430_CM_CLKMODE_DPLL_PER);
-	   reg &= 0xFFFFFFF8;
-	   reg |= 0x5;
-	   __raw_writel(reg, OMAP4430_CM_CLKMODE_DPLL_PER);
-	   printk("cpufreq-omap: Successfully put the PER DPLL into Bypass mode\n"); */
-
 	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
 	clk_set_parent(core_hsd_byp_clk_mux_ck, dpll_abe_m3x2_ck);
 
@@ -416,45 +401,22 @@ int omap4_dpll_low_power_cascade_enter()
 	/* DDR clock rate */
 	clk_rate = (unsigned long) clk_get_rate(dpll_core_m2_ck);
 
-	/* Let HW control ABE DPLL now, since we have the DPLL's chained */
-#if 0
-	reg = 0x1;
-	__raw_writel(reg, OMAP4430_CM_AUTOIDLE_DPLL_ABE);
-#else
+	/* DPLLs are configured, so let DPLL_ABE idle again */
 	omap3_dpll_allow_idle(dpll_abe_ck);
-#endif
 
-	/* Move PRM from SYS Clock to ABE LP Clock and ABE Bypass clock to 32kHz */
-#if 0
-	reg = 0x1;
-	__raw_writel(reg, OMAP4430_CM_L4_WKUP_CLKSEL);
-#else
 	/*
 	 * use ABE_LP_CLK to drive L4WKUP_ICLK and use 32K_FCLK to drive
 	 * ABE_DPLL_BYPASS_CLK
 	 */
 	clk_set_parent(l4_wkup_clk_mux_ck, lp_clk_div_ck);
-#endif
 
 	/* never de-assert CLKREQ while in DPLL cascading scheme */
 	__raw_writel(0x0, OMAP4430_PRM_CLKREQCTRL);
 
-#if 0
-	/* Program emu cd to HW-AUTO mode and change clock source */
-	reg = __raw_readl(OMAP4430_CM_EMU_DEBUGSS_CLKCTRL);
-	reg |= (0x1 << 22) | (0x1 << 20);
-	__raw_writel(reg, OMAP4430_CM_EMU_DEBUGSS_CLKCTRL);
-#else
+	/* drive PM debug clocks from CORE_M6X2 and allow the clkdm to idle */
 	clk_set_parent(pmd_stm_clock_mux_ck, dpll_core_m6x2_ck);
 	clk_set_parent(pmd_trace_clk_mux_ck, dpll_core_m6x2_ck);
-#endif
-
-#if 0
-	reg = 0x3;
-	__raw_writel(reg, OMAP4430_CM_EMU_CLKSTCTRL);
-#else
 	omap2_clkdm_allow_idle(emu_sys_44xx_clkdm);
-#endif
 
 	goto out;
 
