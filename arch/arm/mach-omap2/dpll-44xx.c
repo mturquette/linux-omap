@@ -45,6 +45,10 @@ static struct dpll_cascade_saved_state {
 	unsigned long div_core_ck_rate;
 	unsigned long dpll_core_m2_ck_rate;
 	unsigned long dpll_core_m5x2_ck_rate;
+	struct clk *l4_wkup_clk_mux_ck_parent;
+	struct clk *pmd_stm_clock_mux_ck_parent;
+	struct clk *pmd_trace_clk_mux_ck_parent;
+	u32 clkreqctrl;
 } state;
 
 /**
@@ -420,6 +424,7 @@ int omap4_dpll_low_power_cascade_enter()
 	 * use ABE_LP_CLK to drive L4WKUP_ICLK and use 32K_FCLK to drive
 	 * ABE_DPLL_BYPASS_CLK
 	 */
+	state.l4_wkup_clk_mux_ck_parent = l4_wkup_clk_mux_ck->parent;
 	ret = clk_set_parent(l4_wkup_clk_mux_ck, lp_clk_div_ck);
 	if (ret)
 		pr_debug("%s: failed reparenting L4WKUP_ICLK to ABE LP clock\n",
@@ -429,9 +434,12 @@ int omap4_dpll_low_power_cascade_enter()
 				__func__);
 
 	/* never de-assert CLKREQ while in DPLL cascading scheme */
+	state.clkreqctrl = __raw_readl(OMAP4430_PRM_CLKREQCTRL);
 	__raw_writel(0x0, OMAP4430_PRM_CLKREQCTRL);
 
 	/* drive PM debug clocks from CORE_M6X2 and allow the clkdm to idle */
+	state.pmd_stm_clock_mux_ck_parent = pmd_stm_clock_mux_ck->parent;
+	state.pmd_trace_clk_mux_ck_parent = pmd_trace_clk_mux_ck->parent;
 	ret =  clk_set_parent(pmd_stm_clock_mux_ck, dpll_core_m6x2_ck);
 	ret |= clk_set_parent(pmd_trace_clk_mux_ck, dpll_core_m6x2_ck);
 	if (ret)
@@ -442,6 +450,8 @@ int omap4_dpll_low_power_cascade_enter()
 				__func__);
 
 	omap2_clkdm_allow_idle(emu_sys_44xx_clkdm);
+
+	recalculate_root_clocks();
 
 	goto out;
 
@@ -469,6 +479,111 @@ out:
 
 int omap4_dpll_low_power_cascade_exit()
 {
-	pr_err("%s\n", __func__);
-	return 0;
+	int ret = 0;
+	struct clk *sys_clkin_ck;
+	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck;
+	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
+	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
+	struct clk *dpll_core_x2_ck;
+	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck, *dpll_core_m6x2_ck;
+	struct clk *core_hsd_byp_clk_mux_ck, *div_core_ck;
+	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
+	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
+	struct clockdomain *emu_sys_44xx_clkdm;
+
+	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
+	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
+	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
+	div_mpu_hs_clk = clk_get(NULL, "div_mpu_hs_clk");
+	dpll_iva_ck = clk_get(NULL, "dpll_iva_ck");
+	div_iva_hs_clk = clk_get(NULL, "div_iva_hs_clk");
+	iva_hsd_byp_clk_mux_ck = clk_get(NULL, "iva_hsd_byp_clk_mux_ck");
+	dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
+	dpll_core_m5x2_ck = clk_get(NULL, "dpll_core_m5x2_ck");
+	dpll_core_m6x2_ck = clk_get(NULL, "dpll_core_m6x2_ck");
+	dpll_abe_m3x2_ck = clk_get(NULL, "dpll_abe_m3x2_ck");
+	dpll_core_x2_ck = clk_get(NULL, "dpll_core_x2_ck");
+	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
+	div_core_ck = clk_get(NULL, "div_core_ck");
+	l4_wkup_clk_mux_ck = clk_get(NULL, "l4_wkup_clk_mux_ck");
+	lp_clk_div_ck = clk_get(NULL, "lp_clk_div_ck");
+	pmd_stm_clock_mux_ck = clk_get(NULL, "pmd_stm_clock_mux_ck");
+	pmd_trace_clk_mux_ck = clk_get(NULL, "pmd_trace_clk_mux_ck");
+
+	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
+
+	if (!dpll_abe_ck || !dpll_mpu_ck || !div_mpu_hs_clk || !dpll_iva_ck ||
+		!div_iva_hs_clk || !iva_hsd_byp_clk_mux_ck || !dpll_core_m2_ck
+		|| !dpll_abe_m3x2_ck || !div_core_ck || !dpll_core_x2_ck ||
+		!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
+		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
+		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck || !sys_clkin_ck) {
+		pr_warn("%s: failed to get all necessary clocks\n", __func__);
+		ret = -ENODEV;
+		goto out;
+	}
+
+	/* lock DPLL_MPU */
+	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
+	if (ret)
+		pr_err("%s: DPLL_MPU failed to relock\n", __func__);
+
+	/* lock DPLL_IVA */
+	ret = omap3_noncore_dpll_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);
+	if (ret)
+		pr_err("%s: DPLL_IVA failed to relock\n", __func__);
+
+	/* restore bypass clock rates */
+	clk_set_rate(div_mpu_hs_clk, state.div_mpu_hs_clk_rate);
+	clk_set_rate(div_iva_hs_clk, state.div_iva_hs_clk_rate);
+
+	/* allow DPLL_MPU & DPLL_IVA to idle */
+	omap3_dpll_allow_idle(dpll_mpu_ck);
+	omap3_dpll_allow_idle(dpll_iva_ck);
+
+	/* restore DPLL_IVA bypass clock */
+	ret = clk_set_parent(iva_hsd_byp_clk_mux_ck,
+			state.iva_hsd_byp_clk_mux_ck_parent);
+	if (ret)
+		pr_err("%s: failed to restore DPLL_IVA bypass clock\n",
+				__func__);
+
+	/* restore CORE clock rates */
+	ret =  clk_set_rate(dpll_core_m5x2_ck, state.dpll_core_m5x2_ck_rate);
+	ret |= clk_set_rate(dpll_core_m2_ck, state.dpll_core_m2_ck_rate);
+	ret |= clk_set_rate(div_core_ck, state.div_core_ck_rate);
+	if (ret)
+		pr_debug("%s: failed to restore CORE clock rates\n", __func__);
+
+	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
+	ret = clk_set_parent(core_hsd_byp_clk_mux_ck,
+			state.core_hsd_byp_clk_mux_ck_parent);
+	if (ret)
+		pr_debug("%s: failed restoring DPLL_CORE bypass clock parent\n",
+				__func__);
+
+	/* DPLLs are configured, so let SYSCK idle again */
+
+	/* restore parent to drive L4WKUP_ICLK and ABE_DPLL_BYPASS_CLK */
+	clk_set_parent(l4_wkup_clk_mux_ck, state.l4_wkup_clk_mux_ck_parent);
+	if (ret)
+		pr_debug("%s: failed restoring L4WKUP_ICLK parent clock\n",
+				__func__);
+
+	/* restore CLKREQ behavior */
+	__raw_writel(state.clkreqctrl, OMAP4430_PRM_CLKREQCTRL);
+
+	/* drive PM debug clocks from CORE_M6X2 and allow the clkdm to idle */
+	ret =  clk_set_parent(pmd_stm_clock_mux_ck,
+			state.pmd_stm_clock_mux_ck_parent);
+	ret |= clk_set_parent(pmd_trace_clk_mux_ck,
+			state.pmd_trace_clk_mux_ck_parent);
+	if (ret)
+		pr_debug("%s: failed restoring parent to PMD clocks\n",
+				__func__);
+
+	recalculate_root_clocks();
+
+out:
+	return ret;
 }
