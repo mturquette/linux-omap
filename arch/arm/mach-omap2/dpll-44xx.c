@@ -31,9 +31,19 @@
 #define MAX_FREQ_UPDATE_TIMEOUT  100000
 #define DPLL_REGM4XEN_ENABLE	0x1
 
+u32 cm_clkmode_dpll_abe_mask =
+		(OMAP4430_DPLL_REGM4XEN_MASK |
+		 OMAP4430_DPLL_LPMODE_EN_MASK |
+		 OMAP4430_DPLL_RELOCK_RAMP_EN_MASK |
+		 OMAP4430_DPLL_RAMP_RATE_MASK |
+		 OMAP4430_DPLL_DRIFTGUARD_EN_MASK);
+
 static struct clockdomain *l3_emif_clkdm;
 
 static struct dpll_cascade_saved_state {
+	unsigned long dpll_abe_ck_rate;
+	unsigned long cm_clkmode_dpll_abe;
+	struct clk *abe_dpll_refclk_mux_ck_parent;
 	unsigned long dpll_mpu_ck_rate;
 	unsigned long dpll_iva_ck_rate;
 	unsigned long div_mpu_hs_clk_rate;
@@ -297,8 +307,10 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
  */
 int omap4_dpll_low_power_cascade_enter()
 {
+	u32 reg;
 	int ret = 0;
-	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck;
+	struct clk *sys_32k_ck;
+	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck, *abe_dpll_refclk_mux_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
 	struct clk *dpll_core_x2_ck;
@@ -308,7 +320,9 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
 	struct clockdomain *emu_sys_44xx_clkdm;
 
+	sys_32k_ck = clk_get(NULL, "sys_32k_ck");
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
+	abe_dpll_refclk_mux_ck = clk_get(NULL, "abe_dpll_refclk_mux_ck");
 	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
 	div_mpu_hs_clk = clk_get(NULL, "div_mpu_hs_clk");
 	dpll_iva_ck = clk_get(NULL, "dpll_iva_ck");
@@ -333,7 +347,8 @@ int omap4_dpll_low_power_cascade_enter()
 		|| !dpll_abe_m3x2_ck || !div_core_ck || !dpll_core_x2_ck ||
 		!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
 		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
-		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck) {
+		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck
+		|| !abe_dpll_refclk_mux_ck || !sys_32k_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -342,6 +357,89 @@ int omap4_dpll_low_power_cascade_enter()
 	/* enable DPLL_ABE and keep it on; usecount++ */
 	clk_enable(dpll_abe_ck);
 	omap3_dpll_deny_idle(dpll_abe_ck);
+
+	/* check if DPLL_ABE is driven by 32KHz clock.  If not, reparent it */
+	if (abe_dpll_refclk_mux_ck->parent != sys_32k_ck) {
+		state.dpll_abe_ck_rate = dpll_abe_ck->rate;
+		state.abe_dpll_refclk_mux_ck_parent =
+			clk_get_parent(abe_dpll_refclk_mux_ck);
+
+		ret = omap4_noncore_dpll_mn_bypass(dpll_abe_ck);
+
+		if (ret) {
+			pr_warn("%s: DPLL_ABE failed to enter MN Bypass\n",
+					__func__);
+			omap3_dpll_allow_idle(dpll_abe_ck);
+			clk_disable(dpll_abe_ck);
+			goto out;
+		}
+
+		ret = clk_set_parent(abe_dpll_refclk_mux_ck, sys_32k_ck);
+
+		if (ret) {
+			pr_warn("%s: failed to reparent DPLL_ABE to SYS_32K\n",
+					__func__);
+			clk_set_rate(dpll_abe_ck, state.dpll_abe_ck_rate);
+			omap3_dpll_allow_idle(dpll_abe_ck);
+			clk_disable(dpll_abe_ck);
+			goto out;
+		}
+
+		/*
+		 * Before re-locking DPLL_ABE at 196.608MHz
+		 * CM_CLKMODE_DPLL_ABE needs to be configured specifically for
+		 * DPLL cascading and for being fed from 32KHz timer.  First
+		 * save the inital register contents for later on, then
+		 * program the new values all at once.
+		 */
+		reg = __raw_readl(dpll_abe_ck->dpll_data->control_reg);
+		reg &= cm_clkmode_dpll_abe_mask;
+		state.cm_clkmode_dpll_abe = reg;
+
+		mdelay(10);
+
+		/*
+		 * DPLL_ABE REGM4XEN Enable
+		 * DPLL_ABE LP Mode Enable
+		 * DPLL_ABE Relock Ramp Enable
+		 * DPLL_ABE Ramp Rate
+		 * DPLL_ABE Driftguard Enable
+		 */
+		reg = ((0x1 << OMAP4430_DPLL_REGM4XEN_SHIFT) |
+				(0x1 << OMAP4430_DPLL_LPMODE_EN_SHIFT) |
+				(0x1 << OMAP4430_DPLL_RELOCK_RAMP_EN_SHIFT) |
+				(0x1 << OMAP4430_DPLL_RAMP_RATE_SHIFT) |
+				(0x1 << OMAP4430_DPLL_DRIFTGUARD_EN_SHIFT));
+
+		omap4_prm_rmw_reg_bits(cm_clkmode_dpll_abe_mask, reg,
+				dpll_abe_ck->dpll_data->control_reg);
+
+		mdelay(10);
+
+		/*
+		 * On OMAP4 the DPLL_n_X2 clocks are not twice the speed of
+		 * the DPLL.  Instead they reflect the actual output of the
+		 * DPLL and the non-X2 clocks are half of that output.  It
+		 * would be preferable to set the rate of dpll_abe_x2_ck but
+		 * that clock doesn't have any clock ops.  Program dpll_abe_ck
+		 * for half of the desired rate instead.
+		 */
+		ret = clk_set_rate(dpll_abe_ck, 196608000 / 2);
+		if (ret) {
+			pr_warn("%s: failed to lock DPLL_ABE\n", __func__);
+			omap4_prm_rmw_reg_bits(cm_clkmode_dpll_abe_mask,
+					state.cm_clkmode_dpll_abe,
+					dpll_abe_ck->dpll_data->control_reg);
+			clk_set_parent(abe_dpll_refclk_mux_ck,
+					state.abe_dpll_refclk_mux_ck_parent);
+			clk_set_rate(dpll_abe_ck, state.dpll_abe_ck_rate);
+			omap3_dpll_allow_idle(dpll_abe_ck);
+			clk_disable(dpll_abe_ck);
+			goto out;
+		}
+	} else
+		/* paranoia */
+		state.abe_dpll_refclk_mux_ck_parent = NULL;
 
 	/* divide MPU/IVA bypass clocks by 2 (for when we bypass DPLL_CORE) */
 	state.div_mpu_hs_clk_rate = div_mpu_hs_clk->rate;
@@ -478,8 +576,8 @@ out:
 int omap4_dpll_low_power_cascade_exit()
 {
 	int ret = 0;
-	struct clk *sys_clkin_ck;
-	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck;
+	struct clk *sys_clkin_ck, *sys_32k_ck;
+	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck, *abe_dpll_refclk_mux_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
 	struct clk *dpll_core_x2_ck;
@@ -490,6 +588,8 @@ int omap4_dpll_low_power_cascade_exit()
 	struct clockdomain *emu_sys_44xx_clkdm;
 
 	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
+	sys_32k_ck = clk_get(NULL, "sys_32k_ck");
+	abe_dpll_refclk_mux_ck = clk_get(NULL, "abe_dpll_refclk_mux_ck");
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
 	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
 	div_mpu_hs_clk = clk_get(NULL, "div_mpu_hs_clk");
@@ -515,7 +615,8 @@ int omap4_dpll_low_power_cascade_exit()
 		|| !dpll_abe_m3x2_ck || !div_core_ck || !dpll_core_x2_ck ||
 		!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
 		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
-		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck || !sys_clkin_ck) {
+		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck
+		|| !sys_clkin_ck || !sys_32k_ck || !abe_dpll_refclk_mux_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -560,7 +661,27 @@ int omap4_dpll_low_power_cascade_exit()
 		pr_debug("%s: failed restoring DPLL_CORE bypass clock parent\n",
 				__func__);
 
-	/* DPLLs are configured, so let SYSCK idle again */
+	/* reconfigure DPLL_ABE if needed */
+	if (state.abe_dpll_refclk_mux_ck_parent) {
+		/* reprogram CM_CLKMODE_DPLL_ABE */
+		omap4_prm_rmw_reg_bits(cm_clkmode_dpll_abe_mask,
+				state.cm_clkmode_dpll_abe,
+				dpll_abe_ck->dpll_data->control_reg);
+
+		/* re-parent DPLL_ABE refclk */
+		clk_set_parent(abe_dpll_refclk_mux_ck,
+				state.abe_dpll_refclk_mux_ck_parent);
+
+		/* relock DPLL_ABE */
+		clk_set_rate(dpll_abe_ck, state.dpll_abe_ck_rate);
+
+		omap3_dpll_allow_idle(dpll_abe_ck);
+		clk_disable(dpll_abe_ck);
+	}
+
+	/*
+	 * DPLLs are configured, so let SYSCK idle again
+	 */
 
 	/* restore parent to drive L4WKUP_ICLK and ABE_DPLL_BYPASS_CLK */
 	clk_set_parent(l4_wkup_clk_mux_ck, state.l4_wkup_clk_mux_ck_parent);
