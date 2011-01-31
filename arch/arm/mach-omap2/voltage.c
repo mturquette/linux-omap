@@ -631,8 +631,13 @@ static int omap_abb_notify_voltage(struct notifier_block *nb,
 	v_info = (struct omap_volt_change_info *)data;
 	target_volt_data = omap_voltage_get_voltdata(&v_info->vdd_info->voltdm,
 			v_info->target_volt);
+	if (IS_ERR(target_volt_data))
+		return target_volt_data;
+
 	curr_volt_data = omap_voltage_get_voltdata(&v_info->vdd_info->voltdm,
 			v_info->curr_volt);
+	if (IS_ERR(curr_volt_data))
+		return curr_volt_data;
 
 	/* nothing to do here */
 	if (target_volt_data->abb_type == curr_volt_data->abb_type)
