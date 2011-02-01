@@ -28,6 +28,8 @@
 #include <plat/clock.h>
 #include <plat/omap_device.h>
 
+#include <mach/omap4-common.h>
+
 #include "cm-regbits-34xx.h"
 #include "prm.h"
 #include "opp44xx.h"
@@ -102,7 +104,7 @@ static struct omap_opp_def __initdata omap44xx_pre_es2_1_opp_def_list[] = {
  */
 static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	/* MPU OPP - OPP_LP */
-	OMAP_OPP_DEF("mpu", false, 98304000, 930000),
+	OMAP_OPP_DEF("mpu", false, 98304000, 928000),
 	/* MPU OPP1 - OPP50 */
 	OMAP_OPP_DEF("mpu", true, 300000000, 930000),
 	/* MPU OPP2 - OPP100 */
@@ -113,9 +115,9 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	OMAP_OPP_DEF("mpu", true, 1008000000, 1350000),
 
 	/* IVA OPP - OPP_LP */
-	OMAP_OPP_DEF("iva", false,  98304000, 930000),
+	OMAP_OPP_DEF("iva", false,  98304000, 928000),
 	/* IVA OPP1 - OPP50_98 */
-	OMAP_OPP_DEF("iva", true,  133000000, 928000),
+	OMAP_OPP_DEF("iva", true,  133000000, 929000),
 	/* IVA OPP1 - OPP50 */
 	OMAP_OPP_DEF("iva", true,  133000000, 930000),
 	/* IVA OPP2 - OPP100 */
@@ -124,9 +126,9 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	OMAP_OPP_DEF("iva", false, 332000000, 1260000),
 
 	/* DSP OPP - OPP_LP */
-	OMAP_OPP_DEF("dsp", false, 98304000, 930000),
+	OMAP_OPP_DEF("dsp", false, 98304000, 928000),
 	/* DSP OPP1 - OPP50_98 */
-	OMAP_OPP_DEF("dsp", true, 232800000, 928000),
+	OMAP_OPP_DEF("dsp", true, 232800000, 929000),
 	/* DSP OPP1 - OPP50 */
 	OMAP_OPP_DEF("dsp", true, 232800000, 930000),
 	/* DSP OPP2 - OPP100 */
@@ -134,10 +136,10 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	/* DSP OPP3 - OPPTB */
 	OMAP_OPP_DEF("dsp", false, 498000000, 1260000),
 
-	/* ABE OPP - OPP_LP */
-	OMAP_OPP_DEF("omap-aess-audio", false, 98304000, 930000),
 	/* ABE OPP - OPP50_98 */
 	OMAP_OPP_DEF("omap-aess-audio", true, 49152000, 928000),
+	/* ABE OPP - OPP_LP */
+	OMAP_OPP_DEF("omap-aess-audio", false, 98304000, 929000),
 	/* ABE OPP1 - OPP50 */
 	OMAP_OPP_DEF("omap-aess-audio", true, 98304000, 930000),
 	/* ABE OPP2 - OPP100 */
@@ -146,41 +148,50 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	OMAP_OPP_DEF("omap-aess-audio", false, 196608000, 1260000),
 
 	/* L3 OPP - OPP_LP */
-	OMAP_OPP_DEF("l3_main_1", false, 98304000, 930000),
+	OMAP_OPP_DEF("l3_main_1", false, 98304000, 928000),
 	/* L3 OPP1 - OPP50 */
 	OMAP_OPP_DEF("l3_main_1", true, 100000000, 930000),
 	/* L3 OPP2 - OPP100, OPP-Turbo, OPP-SB */
 	OMAP_OPP_DEF("l3_main_1", true, 200000000, 1100000),
 
 	/* EMIF1 OPP - OPP_LP */
-	OMAP_OPP_DEF("emif1", false, 196608000, 930000),
+	OMAP_OPP_DEF("emif1", false, 196608000, 928000),
 	/* EMIF1 OPP1 - OPP50 */
 	OMAP_OPP_DEF("emif1", true, 400000000, 930000),
 	/* EMIF1 OPP2 - OPP100 */
 	OMAP_OPP_DEF("emif1", true, 800000000, 1100000),
 
 	/* EMIF2 OPP - OPP_LP */
-	OMAP_OPP_DEF("emif2", false, 196608000, 930000),
+	OMAP_OPP_DEF("emif2", false, 196608000, 928000),
 	/* EMIF2 OPP1 - OPP50 */
 	OMAP_OPP_DEF("emif2", true, 400000000, 930000),
 	/* EMIF2 OPP2 - OPP100 */
 	OMAP_OPP_DEF("emif2", true, 800000000, 1100000),
 
 	/* CAM FDIF OPP - OPP_LP */
-	OMAP_OPP_DEF("fdif", false, 98304000, 930000),
+	OMAP_OPP_DEF("fdif", false, 98304000, 928000),
 	/* CAM FDIF OPP1 - OPP50 */
 	OMAP_OPP_DEF("fdif", true, 64000000, 930000),
 	/* CAM FDIF OPP2 - OPP100 */
 	OMAP_OPP_DEF("fdif", true, 128000000, 1100000),
 
 	/* SGX OPP - OPP_LP */
-	OMAP_OPP_DEF("gpu", false, 98304000, 930000),
+	OMAP_OPP_DEF("gpu", false, 98304000, 928000),
 	/* SGX OPP1 - OPP50 */
 	OMAP_OPP_DEF("gpu", true, 153600000, 930000),
 	/* SGX OPP2 - OPP100 */
 	OMAP_OPP_DEF("gpu", true, 307200000, 1100000),
 };
 
+/* frequencies for use only during DPLL cascading */
+#define L3_LP_RATE			 98304000
+#define DPLL_CORE_M3_OPP_LP_RATE	196608000
+#define DPLL_CORE_M6_OPP_LP_RATE	196608000
+#define DPLL_CORE_M7_OPP_LP_RATE	 98304000
+#define DPLL_PER_M3_OPP_LP_RATE		196608000
+#define DPLL_PER_M6_OPP_LP_RATE		196608000
+
+/* frequencies for normal operation */
 #define	L3_OPP50_RATE			100000000
 #define DPLL_CORE_M3_OPP50_RATE		200000000
 #define DPLL_CORE_M3_OPP100_RATE	320000000
@@ -222,6 +233,10 @@ static unsigned long compute_lpj(unsigned long ref, u_int div, u_int mult)
 static int omap4_mpu_set_rate(struct device *dev, unsigned long rate)
 {
 	int ret;
+	pr_err("%s: I'M HERE\n", __func__);
+
+	if (omap4_lpmode)
+		dump_stack();
 
 	ret = clk_set_rate(dpll_mpu_clk, rate);
 	if (ret) {
@@ -240,6 +255,10 @@ static unsigned long omap4_mpu_get_rate(struct device *dev)
 
 static int omap4_iva_set_rate(struct device *dev, unsigned long rate)
 {
+	if (omap4_lpmode)
+		dump_stack();
+
+	pr_err("%s: I'M HERE\n", __func__);
 	if (dev == omap2_get_iva_device()) {
 		unsigned long round_rate;
 		/*
@@ -274,7 +293,18 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 	u32 d_core_m3_rate, d_core_m6_rate, d_core_m7_rate;
 	u32 d_per_m3_rate, d_per_m6_rate;
 
-	if (rate <= L3_OPP50_RATE) {
+	pr_err("%s: I'M HERE\n", __func__);
+
+	if (omap4_lpmode)
+		dump_stack();
+
+	if (rate == L3_LP_RATE) {
+		d_core_m3_rate = DPLL_CORE_M3_OPP_LP_RATE;
+		d_core_m6_rate = DPLL_CORE_M6_OPP_LP_RATE;
+		d_core_m7_rate = DPLL_CORE_M7_OPP_LP_RATE;
+		d_per_m3_rate = DPLL_PER_M3_OPP_LP_RATE;
+		d_per_m6_rate = DPLL_PER_M6_OPP_LP_RATE;
+	} else if (rate <= L3_OPP50_RATE) {
 		d_core_m3_rate = DPLL_CORE_M3_OPP50_RATE;
 		d_core_m6_rate = DPLL_CORE_M6_OPP50_RATE;
 		d_core_m7_rate = DPLL_CORE_M7_OPP50_RATE;
@@ -304,6 +334,10 @@ static unsigned long omap4_l3_get_rate(struct device *dev)
 
 static int omap4_emif_set_rate(struct device *dev, unsigned long rate)
 {
+	if (omap4_lpmode)
+		dump_stack();
+
+	pr_err("%s: I'M HERE\n", __func__);
 	return clk_set_rate(core_m2_clk, rate);
 }
 
@@ -316,6 +350,10 @@ static int omap4_abe_set_rate(struct device *dev, unsigned long rate)
 {
 	unsigned long round_rate;
 
+	if (omap4_lpmode)
+		dump_stack();
+
+	pr_err("%s: I'M HERE\n", __func__);
 	round_rate = clk_round_rate(abe_clk, rate);
 
 	return clk_set_rate(abe_clk, round_rate);
@@ -328,6 +366,10 @@ static unsigned long omap4_abe_get_rate(struct device *dev)
 
 static int omap4_sgx_set_rate(struct device *dev, unsigned long rate)
 {
+	if (omap4_lpmode)
+		dump_stack();
+
+	pr_err("%s: I'M HERE\n", __func__);
 	return clk_set_rate(sgx_clk, rate);
 }
 
@@ -338,6 +380,10 @@ static unsigned long omap4_sgx_get_rate(struct device *dev)
 
 static int omap4_fdif_set_rate(struct device *dev, unsigned long rate)
 {
+	if (omap4_lpmode)
+		dump_stack();
+
+	pr_err("%s: I'M HERE\n", __func__);
 	return clk_set_rate(fdif_clk, rate);
 }
 
