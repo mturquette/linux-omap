@@ -31,6 +31,8 @@
 #define MAX_FREQ_UPDATE_TIMEOUT  100000
 #define DPLL_REGM4XEN_ENABLE	0x1
 
+bool omap4_lpmode = false;
+
 static struct clockdomain *l3_emif_clkdm;
 static struct clk *dpll_core_m2_ck;
 static struct clk *emif1_fck, *emif2_fck;
@@ -533,6 +535,8 @@ int omap4_dpll_low_power_cascade_enter()
 		goto out;
 	}
 
+	omap4_lpmode = true;
+
 	/* enable DPLL_ABE and keep it on; usecount++ */
 	clk_enable(dpll_abe_ck);
 	omap3_dpll_deny_idle(dpll_abe_ck);
@@ -674,6 +678,7 @@ iva_hsd_byp_clk_mux_ck_parent:
 			state.iva_hsd_byp_clk_mux_ck_parent);
 	omap3_dpll_allow_idle(dpll_iva_ck);
 	omap3_dpll_allow_idle(dpll_mpu_ck);
+	omap4_lpmode = false;
 out:
 	return ret;
 }
@@ -790,6 +795,8 @@ int omap4_dpll_low_power_cascade_exit()
 	/* allow DPLL_MPU & DPLL_IVA to idle */
 	omap3_dpll_allow_idle(dpll_mpu_ck);
 	omap3_dpll_allow_idle(dpll_iva_ck);
+
+	omap4_lpmode = false;
 
 	/* DPLLs are configured, so let SYSCK idle again */
 

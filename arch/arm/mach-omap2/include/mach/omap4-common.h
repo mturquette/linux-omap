@@ -83,6 +83,8 @@ extern void __iomem *gic_dist_base_addr;
 extern void __iomem *sar_ram_base;
 extern dma_addr_t omap4_secure_ram_phys;
 
+extern bool omap4_lpmode;
+
 extern void __init gic_init_irq(void);
 extern void omap_smc1(u32 fn, u32 arg);
 extern u32 omap_smc2(u32 id, u32 falg, u32 pargs);
