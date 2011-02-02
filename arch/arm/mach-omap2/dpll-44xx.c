@@ -18,6 +18,7 @@
 #include <plat/common.h>
 #include <plat/clockdomain.h>
 #include <plat/prcm.h>
+#include <plat/omap_device.h>
 
 #include <mach/emif.h>
 #include <mach/omap4-common.h>
@@ -30,6 +31,8 @@
 
 #define MAX_FREQ_UPDATE_TIMEOUT  100000
 #define DPLL_REGM4XEN_ENABLE	0x1
+
+bool omap4_lpmode = false;
 
 u32 cm_clkmode_dpll_abe_mask =
 		(OMAP4430_DPLL_REGM4XEN_MASK |
@@ -73,6 +76,7 @@ static struct dpll_cascade_saved_state {
  */
 int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 {
+	int i = 0;
 	u32 validrate = 0, shadow_freq_cfg1 = 0, new_div = 0;
 	struct clk *dpll_core_ck;
 	struct dpll_data *dd;
@@ -81,11 +85,21 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
 	dd = dpll_core_ck->dpll_data;
 
+	//pr_err("%s: here0\n", __func__);
+
 	if (!clk || !rate)
 		return -EINVAL;
 
 	if (!dpll_core_ck || !dd)
 		return -ENODEV;
+
+	/* Just to avoid look-up on every call to speed up */
+	if (!l3_emif_clkdm)
+		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
+
+	/* CM_MEMIF_CLKSTCTRL */
+	/* Configures MEMIF domain in SW_WKUP */
+	omap2_clkdm_wakeup(l3_emif_clkdm);
 
 	/* check for bypass rate */
 	if (rate == dd->clk_bypass->rate) {
@@ -100,32 +114,77 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 		 * program CM_DIV_M2_DPLL_CORE.DPLL_CLKOUT_DIV for divide by
 		 * two and put DPLL_CORE into LP Bypass
 		 */
-		shadow_freq_cfg1 = (0x2 << 11) | (0x5 << 8);
+		shadow_freq_cfg1 =
+			(0x2 << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
+			(DPLL_LOW_POWER_BYPASS <<
+			 OMAP4430_DPLL_CORE_DPLL_EN_SHIFT) |
+			(1 << OMAP4430_DLL_RESET_SHIFT);
+		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
+		mdelay(10);
+
+		shadow_freq_cfg1 = __raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1);
+		shadow_freq_cfg1 |= (1 << OMAP4430_FREQ_UPDATE_SHIFT);
 		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
 	} else {
 		/* check for valid rate to lock DPLL_CORE */
-		validrate = omap2_clksel_round_rate_div(clk, rate, &new_div);
-		if (validrate != rate)
-			return -EINVAL;
+#if 0
+		if (omap4_lpmode) {
+			validrate = 800000000;
+			new_div = 1;
+		} else {
+			validrate = omap2_clksel_round_rate_div(clk, rate, &new_div);
+			if (validrate != rate)
+				return -EINVAL;
+		}
+#else
+		if (rate == 800000000)
+			new_div = 2;
+		else if (rate == 400000000)
+			new_div = 1;
+		else
+			pr_err("%s: shouldn't be here!  rate is %lu\n",
+					__func__, rate);
+#endif
 
 		/*
 		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
 		 * parameters in EMIF shadow registers for validrate divided
 		 * by 2.
 		 */
-		omap_emif_setup_registers(validrate / 2, LPDDR2_VOLTAGE_STABLE);
+		omap_emif_setup_registers(rate / 2, LPDDR2_VOLTAGE_STABLE);
+
+		//pr_err("%s: here1\n", __func__);
 
 		/*
 		 * program DPLL_CORE_M2_DIV with same value as the one already
 		 * in direct register and lock DPLL_CORE
 		 */
-		shadow_freq_cfg1 = (new_div <<
-				OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
-			(DPLL_LOCKED << OMAP4430_DPLL_CORE_DPLL_EN_SHIFT);
+		shadow_freq_cfg1 =
+			(new_div << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
+			(DPLL_LOCKED << OMAP4430_DPLL_CORE_DPLL_EN_SHIFT) |
+			(1 << OMAP4430_DLL_RESET_SHIFT) |
+			(1 << OMAP4430_FREQ_UPDATE_SHIFT);
 		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
 	}
 
-	return omap4_set_freq_update();
+	pr_err("%s: here2\n", __func__);
+
+	/* wait for the configuration to be applied */
+	omap_test_timeout(((__raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1)
+					& OMAP4430_FREQ_UPDATE_MASK) == 0),
+			MAX_FREQ_UPDATE_TIMEOUT, i);
+
+	/* CM_MEMIF_CLKSTCTRL */
+	/* Configures MEMIF domain back to HW_WKUP */
+	omap2_clkdm_allow_idle(l3_emif_clkdm);
+
+	if (i == MAX_FREQ_UPDATE_TIMEOUT) {
+		pr_err("%s: Frequency update for CORE DPLL M2 change failed\n",
+				__func__);
+		return -1;
+	}
+
+	return 0;
 }
 
 
@@ -354,12 +413,15 @@ int omap4_dpll_low_power_cascade_enter()
 		goto out;
 	}
 
+	omap4_lpmode = true;
+
 	/* enable DPLL_ABE and keep it on; usecount++ */
 	clk_enable(dpll_abe_ck);
 	omap3_dpll_deny_idle(dpll_abe_ck);
 
+#if 0
 	/* check if DPLL_ABE is driven by 32KHz clock.  If not, reparent it */
-	if (abe_dpll_refclk_mux_ck->parent != sys_32k_ck) {
+	if (clk_get_parent(abe_dpll_refclk_mux_ck) != sys_32k_ck) {
 		state.dpll_abe_ck_rate = dpll_abe_ck->rate;
 		state.abe_dpll_refclk_mux_ck_parent =
 			clk_get_parent(abe_dpll_refclk_mux_ck);
@@ -440,6 +502,7 @@ int omap4_dpll_low_power_cascade_enter()
 	} else
 		/* paranoia */
 		state.abe_dpll_refclk_mux_ck_parent = NULL;
+#endif
 
 	/* divide MPU/IVA bypass clocks by 2 (for when we bypass DPLL_CORE) */
 	state.div_mpu_hs_clk_rate = div_mpu_hs_clk->rate;
@@ -487,6 +550,8 @@ int omap4_dpll_low_power_cascade_enter()
 	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
 	state.core_hsd_byp_clk_mux_ck_parent = core_hsd_byp_clk_mux_ck->parent;
 	ret = clk_set_parent(core_hsd_byp_clk_mux_ck, dpll_abe_m3x2_ck);
+	pr_err("%s: ret is %d, CM_CLKSEL_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(core_hsd_byp_clk_mux_ck->clksel_reg));
 	if (ret) {
 		pr_debug("%s: failed reparenting DPLL_CORE bypass clock to ABE_M3X2\n",
 				__func__);
@@ -496,6 +561,12 @@ int omap4_dpll_low_power_cascade_enter()
 				__func__);
 
 	/*
+	 * bypass PER here.  Be sure parent is DPLL_CORE.
+	 * Also make sure that UARTs behave correctly.  Seems like UART1/2/3/4
+	 * all seem to be enabled during DPLL cascading...
+	 */
+
+	/*
 	 * bypass DPLL_CORE, configure EMIF for the new rate
 	 * CORE_CLK = CORE_X2_CLK
 	 */
@@ -503,9 +574,18 @@ int omap4_dpll_low_power_cascade_enter()
 	state.dpll_core_m2_ck_rate = dpll_core_m2_ck->rate;
 	state.dpll_core_m5x2_ck_rate = dpll_core_m5x2_ck->rate;
 
-	ret =  clk_set_rate(div_core_ck, dpll_core_m5x2_ck->rate);
-	ret |= clk_set_rate(dpll_core_m2_ck, 196608000);
-	ret |= clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
+	ret =  clk_set_rate(div_core_ck, (dpll_core_m5x2_ck->rate / 2));
+	pr_err("%s: ret is %d, CM_CLKSEL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(div_core_ck->clksel_reg));
+
+	ret = clk_set_rate(dpll_core_m2_ck, 196608000);
+	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(dpll_core_m2_ck->clksel_reg));
+
+	/* at this point MPU and IVA should not be bypassed... */
+	ret = clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
+	pr_err("%s: ret is %d, CM_DIV_M5_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(dpll_core_m5x2_ck->clksel_reg));
 	if (ret) {
 		pr_debug("%s: failed setting CORE clock rates\n", __func__);
 		goto core_clock_set_rate_fail;
@@ -548,6 +628,52 @@ int omap4_dpll_low_power_cascade_enter()
 	omap2_clkdm_allow_idle(emu_sys_44xx_clkdm);
 
 	recalculate_root_clocks();
+
+	/* modify OPP tables for OPP_LP entries only */
+
+	/*
+	 * calling the following would be perfect for getting the clock tree
+	 * in shape.  Just need to make sure that they result in DPLL's
+	 * getting relocked!
+	 *
+	 * omap_device_get_rate(mpu)
+	 * omap_device_get_rate(l3)
+	 * omap_device_get_rate(aess)
+	 * omap_device_get_rate(iva)
+	 *
+	 * omap_device_set_rate(mpu, 98MHz)
+	 * omap_device_set_rate(l3, 98MHz)
+	 * omap_device_set_rate(aess, 98MHz)
+	 * omap_device_set_rate(iva, 98MHz)
+	 */
+	static struct device dummy_lp_dev;
+	struct device *dev;
+
+	dev = omap2_get_mpuss_device();
+	if (!dev)
+		pr_err("%s: didn't get mpuss\n", __func__);
+	pr_err("%s: mpuss device rate is %lu\n", __func__, omap_device_get_rate(dev));
+	//omap_device_set_rate(&dummy_lp_dev, dev, 98304000);
+
+	dev = omap2_get_iva_device();
+	if (!dev)
+		pr_err("%s: didn't get iva\n", __func__);
+	pr_err("%s: iva device rate is %lu\n", __func__, omap_device_get_rate(dev));
+	//omap_device_set_rate(&dummy_lp_dev, dev, 98304000);
+
+	dev = omap4_get_dsp_device();
+	if (!dev)
+		pr_err("%s: didn't get dsp\n", __func__);
+	pr_err("%s: dsp device rate is %lu\n", __func__, omap_device_get_rate(dev));
+	//omap_device_set_rate(&dummy_lp_dev, dev, 98304000);
+
+	dev = omap2_get_l3_device();
+	if (!dev)
+		pr_err("%s: didn't get dsp\n", __func__);
+	pr_err("%s: l3 device rate is %lu\n", __func__, omap_device_get_rate(dev));
+	//omap_device_set_rate(&dummy_lp_dev, dev, 98304000);
+
+	//omap4_lpmode = true;
 
 	goto out;
 
@@ -632,13 +758,11 @@ int omap4_dpll_low_power_cascade_exit()
 	if (ret)
 		pr_err("%s: DPLL_IVA failed to relock\n", __func__);
 
+	mdelay(10);
+	pr_err("%s: here0\n", __func__);
 	/* restore bypass clock rates */
 	clk_set_rate(div_mpu_hs_clk, state.div_mpu_hs_clk_rate);
 	clk_set_rate(div_iva_hs_clk, state.div_iva_hs_clk_rate);
-
-	/* allow DPLL_MPU & DPLL_IVA to idle */
-	omap3_dpll_allow_idle(dpll_mpu_ck);
-	omap3_dpll_allow_idle(dpll_iva_ck);
 
 	/* restore DPLL_IVA bypass clock */
 	ret = clk_set_parent(iva_hsd_byp_clk_mux_ck,
@@ -647,22 +771,66 @@ int omap4_dpll_low_power_cascade_exit()
 		pr_err("%s: failed to restore DPLL_IVA bypass clock\n",
 				__func__);
 
-	/* restore CORE clock rates */
-	ret =  clk_set_rate(dpll_core_m5x2_ck, state.dpll_core_m5x2_ck_rate);
-	ret |= clk_set_rate(dpll_core_m2_ck, state.dpll_core_m2_ck_rate);
-	ret |= clk_set_rate(div_core_ck, state.div_core_ck_rate);
-	if (ret)
-		pr_debug("%s: failed to restore CORE clock rates\n", __func__);
+	/* Just to avoid look-up on every call to speed up */
+	if (!l3_emif_clkdm)
+		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
+
+	/* CM_MEMIF_CLKSTCTRL */
+	/* Configures MEMIF domain in SW_WKUP */
+	omap2_clkdm_wakeup(l3_emif_clkdm);
 
 	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
-	ret = clk_set_parent(core_hsd_byp_clk_mux_ck,
-			state.core_hsd_byp_clk_mux_ck_parent);
+	ret = clk_set_parent(core_hsd_byp_clk_mux_ck, dpll_abe_m3x2_ck);
+	pr_err("%s: ret is %d, CM_CLKSEL_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(core_hsd_byp_clk_mux_ck->clksel_reg));
 	if (ret)
 		pr_debug("%s: failed restoring DPLL_CORE bypass clock parent\n",
 				__func__);
 
+	/*mdelay(10);
+	pr_err("%s: here1, rate is %lu\n", __func__,
+			state.dpll_core_m2_ck_rate);*/
+
+	/* restore CORE clock rates */
+	ret = clk_set_rate(div_core_ck, (dpll_core_m5x2_ck->rate / 2));
+	pr_err("%s: ret is %d, CM_CLKSEL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(div_core_ck->clksel_reg));
+
+	/*mdelay(10);
+	pr_err("%s: here2 ret is %d, rate is %lu\n", __func__, ret, state.dpll_core_m5x2_ck_rate);*/
+
+	ret =  clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
+	pr_err("%s: ret is %d, CM_DIV_M5_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(dpll_core_m5x2_ck->clksel_reg));
+
+	/*mdelay(10);
+	pr_err("%s: here3 ret is %d\n", __func__, ret);*/
+
+	/* do the weird non-shadow register programming here, a la x-loader */
+
+	ret = clk_set_rate(dpll_core_m2_ck, 400000000);
+	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(dpll_core_m2_ck->clksel_reg));
+
+	/*mdelay(10);
+	pr_err("%s: here4 ret is %d\n", __func__, ret);*/
+
+	if (ret)
+		pr_err("%s: failed to restore CORE clock rates\n", __func__);
+
+	/* CM_MEMIF_CLKSTCTRL */
+	/* Configures MEMIF domain back to HW_WKUP */
+	omap2_clkdm_allow_idle(l3_emif_clkdm);
+
+	/* allow DPLL_MPU & DPLL_IVA to idle */
+	omap3_dpll_allow_idle(dpll_mpu_ck);
+	omap3_dpll_allow_idle(dpll_iva_ck);
+
+	mdelay(10);
+	pr_err("%s: here5\n", __func__);
 	/* reconfigure DPLL_ABE if needed */
 	if (state.abe_dpll_refclk_mux_ck_parent) {
+		pr_err("%s: reconfiguring DPLL_ABE\n", __func__);
 		/* reprogram CM_CLKMODE_DPLL_ABE */
 		omap4_prm_rmw_reg_bits(cm_clkmode_dpll_abe_mask,
 				state.cm_clkmode_dpll_abe,
