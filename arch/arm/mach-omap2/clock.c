@@ -197,6 +197,7 @@ int omap2_dflt_clk_enable(struct clk *clk)
 
 	if (clk->ops->find_idlest) {
 		if (cpu_is_omap44xx())
+			/* FIXME should return idlest */
 			_omap4_module_wait_ready(clk);
 		else
 			_omap2_module_wait_ready(clk);

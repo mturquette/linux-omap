@@ -42,6 +42,8 @@ u32 cm_clkmode_dpll_abe_mask =
 		 OMAP4430_DPLL_DRIFTGUARD_EN_MASK);
 
 static struct clockdomain *l3_emif_clkdm;
+static struct clk *dpll_core_m2_ck;
+static struct clk *emif1_fck, *emif2_fck;
 
 static struct dpll_cascade_saved_state {
 	unsigned long dpll_abe_ck_rate;
@@ -127,15 +129,15 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
 	} else {
 		/* check for valid rate to lock DPLL_CORE */
-#if 0
-		if (omap4_lpmode) {
+#if 1
+		/*if (omap4_lpmode) {
 			validrate = 800000000;
 			new_div = 1;
-		} else {
+		} else {*/
 			validrate = omap2_clksel_round_rate_div(clk, rate, &new_div);
 			if (validrate != rate)
 				return -EINVAL;
-		}
+		//}
 #else
 		if (rate == 800000000)
 			new_div = 2;
@@ -167,7 +169,7 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
 	}
 
-	pr_err("%s: here2\n", __func__);
+	//pr_err("%s: here2\n", __func__);
 
 	/* wait for the configuration to be applied */
 	omap_test_timeout(((__raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1)
@@ -187,6 +189,194 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 	return 0;
 }
 
+/**
+ * omap4_core_dpll_set_rate - set the rate for the CORE DPLL
+ * @clk: struct clk * of hte DPLL to set
+ * @rate: rounded target rate
+ *
+ * Program the CORE DPLL, including handling of EMIF frequency changes on M2
+ * divider.  Returns 0 on success, otherwise a negative error code.
+ */
+int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
+{
+	int i = 0, m2_div;
+	u32 mask, reg;
+	u32 shadow_freq_cfg1 = 0, new_div = 0;
+	struct clk *dpll_core_ck, *new_parent;
+	struct dpll_data *dd;
+
+	pr_err("%s: here0\n", __func__);
+
+	if (!clk  || !rate)
+		return -EINVAL;
+
+	dd = dpll_core_ck->dpll_data;
+	if (!dd)
+		return -EINVAL;
+
+	if (rate == clk_get_rate(clk))
+		return 0;
+
+	/* enable reference and bypass clocks */
+	clk_enable(dd->clk_bypass);
+	clk_enable(dd->clk_ref);
+
+	/* Just to avoid look-up on every call to speed up */
+	if (!l3_emif_clkdm)
+		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
+	if (!emif1_fck)
+		emif1_fck = clk_get(NULL, "emif1_fck");
+	if (!emif2_fck)
+		emif2_fck = clk_get(NULL, "emif2_fck");
+	if (!dpll_core_m2_ck)
+		dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
+
+	/* CM_MEMIF_CLKSTCTRL */
+	/* Make sure MEMIF clkdm is in SW_WKUP and EMIF modules are func */
+	omap2_clkdm_wakeup(l3_emif_clkdm);
+	clk_enable(emif1_fck);
+	clk_enable(emif2_fck);
+
+	/* check for bypass rate */
+	if (rate == dd->clk_bypass->rate &&
+			clk->dpll_data->modes & (1 << DPLL_LOW_POWER_BYPASS)) {
+		pr_err("%s: here1\n", __func__);
+		/*
+		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
+		 * parameters in EMIF shadow registers for bypass clock rate
+		 * divided by 2
+		 */
+		omap_emif_setup_registers(rate / 2, LPDDR2_VOLTAGE_STABLE);
+		pr_err("%s: here2\n", __func__);
+
+		/*
+		 * FIXME PRCM functional spec says we should program
+		 * CM_SHADOW_FREQ_CONFIG2.CLKSEL_L3 to 0 (corresponds to
+		 * CM_CLKSEL_CORE.CLKSEL_L3) for normal bypass operation.
+		 * This means L3_CLK is CORE_CLK divided by 1.  Same spec says
+		 * the value should be 1 when entering DPLL cascading.  All of
+		 * this assumes GPMC can scale frequency on the fly.  Too many
+		 * unknowns, skipping this for now...
+		 */
+
+		/*
+		 * program CM_DIV_M2_DPLL_CORE.DPLL_CLKOUT_DIV for divide by
+		 * two and put DPLL_CORE into LP Bypass
+		 */
+		m2_div = omap4_prm_read_bits_shift(dpll_core_m2_ck->clksel_reg,
+				dpll_core_m2_ck->clksel_mask);
+
+		shadow_freq_cfg1 =
+			(m2_div << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
+			(DPLL_LOW_POWER_BYPASS <<
+			 OMAP4430_DPLL_CORE_DPLL_EN_SHIFT) |
+			(1 << OMAP4430_DLL_RESET_SHIFT) |
+			(1 << OMAP4430_FREQ_UPDATE_SHIFT);
+		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
+
+		pr_err("%s: here3\n", __func__);
+		new_parent = dd->clk_bypass;
+	} else {
+		pr_err("%s WRONG\n", __func__);
+		if (dd->last_rounded_rate != rate)
+			rate = clk->round_rate(clk, rate);
+
+		if (dd->last_rounded_rate == 0) {
+			pr_err("%s: WHAT THE FUCK, MAN?\n", __func__);
+			return -EINVAL;
+		}
+
+		/*
+		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
+		 * parameters in EMIF shadow registers for validrate divided
+		 * by 2.
+		 */
+		omap_emif_setup_registers(rate / 2, LPDDR2_VOLTAGE_STABLE);
+
+		//pr_err("%s: here1\n", __func__);
+
+		/*
+		 * FIXME skipping  bypass part of omap3_noncore_dpll_program.
+		 * also x-loader's configure_core_dpll_no_lock bypasses
+		 * DPLL_CORE directly through CM_CLKMODE_DPLL_CORE via MN
+		 * bypass; no shadow register necessary!
+		 */
+
+		pr_err("%s: locking DPLL_CORE.  m is %d, n is %d\n", __func__,
+				dd->last_rounded_m, dd->last_rounded_n);
+
+		mask = (dd->mult_mask | dd->div1_mask);
+		reg  = (dd->last_rounded_m << __ffs(dd->mult_mask)) |
+			((dd->last_rounded_n - 1) << __ffs(dd->div1_mask));
+
+		/* program mn divider values */
+		omap4_prm_rmw_reg_bits(mask, reg, dd->mult_div1_reg);
+
+		/*
+		 * FIXME PRCM functional spec says we should program
+		 * CM_SHADOW_FREQ_CONFIG2.CLKSEL_L3 to 1 (corresponds to
+		 * CM_CLKSEL_CORE.CLKSEL_L3) for normal bypass operation.
+		 * This means L3_CLK is CORE_CLK divided by 2.  Same spec says
+		 * the value should be 0 when exiting DPLL cascading.  All of
+		 * this assumes GPMC can scale frequency on the fly.  Too many
+		 * unknowns, skipping this for now...
+		 */
+
+		/*
+		 * program DPLL_CORE_M2_DIV with same value as the one already
+		 * in direct register and lock DPLL_CORE
+		 */
+		m2_div = omap4_prm_read_bits_shift(dpll_core_m2_ck->clksel_reg,
+				dpll_core_m2_ck->clksel_mask);
+
+		shadow_freq_cfg1 =
+			(m2_div << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
+			(DPLL_LOCKED << OMAP4430_DPLL_CORE_DPLL_EN_SHIFT) |
+			(1 << OMAP4430_DLL_RESET_SHIFT) |
+			(1 << OMAP4430_FREQ_UPDATE_SHIFT);
+		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
+
+		new_parent = dd->clk_ref;
+	}
+
+	pr_err("%s: here2\n", __func__);
+
+	/* wait for the configuration to be applied */
+	omap_test_timeout(((__raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1)
+					& OMAP4430_FREQ_UPDATE_MASK) == 0),
+			MAX_FREQ_UPDATE_TIMEOUT, i);
+	/*
+	 * Switch the parent clock in the heirarchy, and make sure that the
+	 * new parent's usecount is correct.  Note: we enable the new parent
+	 * before disabling the old to avoid any unnecessary hardware
+	 * disable->enable transitions.
+	 */
+	if (clk->usecount) {
+		omap2_clk_enable(new_parent);
+		omap2_clk_disable(clk->parent);
+	}
+	clk_reparent(clk, new_parent);
+	clk->rate = rate;
+
+	/* CM_MEMIF_CLKSTCTRL */
+	/* Configures MEMIF domain back to HW_WKUP */
+	omap2_clkdm_allow_idle(l3_emif_clkdm);
+	clk_disable(emif1_fck);
+	clk_disable(emif2_fck);
+
+	/*
+	 * FIXME PRCM functional spec says we should set GPMC_FREQ_UPDATE bit
+	 * here, but we're not even handling CM_SHADOW_FREQ_CONFIG2 at all.
+	 */
+
+	if (i == MAX_FREQ_UPDATE_TIMEOUT) {
+		pr_err("%s: Frequency update for CORE DPLL M2 change failed\n",
+				__func__);
+		return -1;
+	}
+
+	return 0;
+}
 
 /**
  * omap4_prcm_freq_update - set freq_update bit
@@ -372,7 +562,7 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck, *abe_dpll_refclk_mux_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
-	struct clk *dpll_core_x2_ck;
+	struct clk *dpll_core_ck, *dpll_core_x2_ck;
 	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck, *dpll_core_m6x2_ck;
 	struct clk *core_hsd_byp_clk_mux_ck, *div_core_ck;
 	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
@@ -387,6 +577,7 @@ int omap4_dpll_low_power_cascade_enter()
 	dpll_iva_ck = clk_get(NULL, "dpll_iva_ck");
 	div_iva_hs_clk = clk_get(NULL, "div_iva_hs_clk");
 	iva_hsd_byp_clk_mux_ck = clk_get(NULL, "iva_hsd_byp_clk_mux_ck");
+	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
 	dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
 	dpll_core_m5x2_ck = clk_get(NULL, "dpll_core_m5x2_ck");
 	dpll_core_m6x2_ck = clk_get(NULL, "dpll_core_m6x2_ck");
@@ -407,7 +598,7 @@ int omap4_dpll_low_power_cascade_enter()
 		!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
 		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
 		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck
-		|| !abe_dpll_refclk_mux_ck || !sys_32k_ck) {
+		|| !abe_dpll_refclk_mux_ck || !sys_32k_ck || !dpll_core_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -578,9 +769,15 @@ int omap4_dpll_low_power_cascade_enter()
 	pr_err("%s: ret is %d, CM_CLKSEL_CORE is 0x%x\n", __func__, ret,
 			__raw_readl(div_core_ck->clksel_reg));
 
+#if 0
 	ret = clk_set_rate(dpll_core_m2_ck, 196608000);
 	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
 			__raw_readl(dpll_core_m2_ck->clksel_reg));
+#else
+	ret = clk_set_rate(dpll_core_ck, 196608000);
+	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(dpll_core_m2_ck->clksel_reg));
+#endif
 
 	/* at this point MPU and IVA should not be bypassed... */
 	ret = clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
@@ -706,6 +903,7 @@ int omap4_dpll_low_power_cascade_exit()
 	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck, *abe_dpll_refclk_mux_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
+	struct clk *dpll_core_ck;
 	struct clk *dpll_core_x2_ck;
 	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck, *dpll_core_m6x2_ck;
 	struct clk *core_hsd_byp_clk_mux_ck, *div_core_ck;
@@ -722,6 +920,7 @@ int omap4_dpll_low_power_cascade_exit()
 	dpll_iva_ck = clk_get(NULL, "dpll_iva_ck");
 	div_iva_hs_clk = clk_get(NULL, "div_iva_hs_clk");
 	iva_hsd_byp_clk_mux_ck = clk_get(NULL, "iva_hsd_byp_clk_mux_ck");
+	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
 	dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
 	dpll_core_m5x2_ck = clk_get(NULL, "dpll_core_m5x2_ck");
 	dpll_core_m6x2_ck = clk_get(NULL, "dpll_core_m6x2_ck");
@@ -742,7 +941,8 @@ int omap4_dpll_low_power_cascade_exit()
 		!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
 		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
 		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck
-		|| !sys_clkin_ck || !sys_32k_ck || !abe_dpll_refclk_mux_ck) {
+		|| !sys_clkin_ck || !sys_32k_ck || !abe_dpll_refclk_mux_ck
+		|| !dpll_core_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -808,9 +1008,15 @@ int omap4_dpll_low_power_cascade_exit()
 
 	/* do the weird non-shadow register programming here, a la x-loader */
 
+#if 0
 	ret = clk_set_rate(dpll_core_m2_ck, 400000000);
 	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
 			__raw_readl(dpll_core_m2_ck->clksel_reg));
+#else
+	ret = clk_set_rate(dpll_core_ck, 400000000);
+	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
+			__raw_readl(dpll_core_m2_ck->clksel_reg));
+#endif
 
 	/*mdelay(10);
 	pr_err("%s: here4 ret is %d\n", __func__, ret);*/

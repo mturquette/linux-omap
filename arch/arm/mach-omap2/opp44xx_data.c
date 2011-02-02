@@ -233,7 +233,7 @@ static unsigned long compute_lpj(unsigned long ref, u_int div, u_int mult)
 static int omap4_mpu_set_rate(struct device *dev, unsigned long rate)
 {
 	int ret;
-	pr_err("%s: I'M HERE\n", __func__);
+	//pr_err("%s: I'M HERE\n", __func__);
 
 	if (omap4_lpmode)
 		dump_stack();
@@ -258,7 +258,7 @@ static int omap4_iva_set_rate(struct device *dev, unsigned long rate)
 	if (omap4_lpmode)
 		dump_stack();
 
-	pr_err("%s: I'M HERE\n", __func__);
+	//pr_err("%s: I'M HERE\n", __func__);
 	if (dev == omap2_get_iva_device()) {
 		unsigned long round_rate;
 		/*
@@ -293,11 +293,18 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 	u32 d_core_m3_rate, d_core_m6_rate, d_core_m7_rate;
 	u32 d_per_m3_rate, d_per_m6_rate;
 
-	pr_err("%s: I'M HERE\n", __func__);
+	//pr_err("%s: I'M HERE\n", __func__);
 
 	if (omap4_lpmode)
 		dump_stack();
 
+	/*
+	 * XXX maybe we should program these other fixed-rate clocks as part
+	 * of omap4_dpll_core_m2_set_rate?  It is possible other clock
+	 * framework activity may set a new m2 divider (hell, even bypass/lock
+	 * the DPLL) without calling omap_device_set_rate/omap4_l3_set_rate.
+	 * This means the clocks below won't get touched...
+	 */
 	if (rate == L3_LP_RATE) {
 		d_core_m3_rate = DPLL_CORE_M3_OPP_LP_RATE;
 		d_core_m6_rate = DPLL_CORE_M6_OPP_LP_RATE;
@@ -337,7 +344,7 @@ static int omap4_emif_set_rate(struct device *dev, unsigned long rate)
 	if (omap4_lpmode)
 		dump_stack();
 
-	pr_err("%s: I'M HERE\n", __func__);
+	//pr_err("%s: I'M HERE\n", __func__);
 	return clk_set_rate(core_m2_clk, rate);
 }
 
@@ -353,7 +360,7 @@ static int omap4_abe_set_rate(struct device *dev, unsigned long rate)
 	if (omap4_lpmode)
 		dump_stack();
 
-	pr_err("%s: I'M HERE\n", __func__);
+	//pr_err("%s: I'M HERE\n", __func__);
 	round_rate = clk_round_rate(abe_clk, rate);
 
 	return clk_set_rate(abe_clk, round_rate);
@@ -369,7 +376,7 @@ static int omap4_sgx_set_rate(struct device *dev, unsigned long rate)
 	if (omap4_lpmode)
 		dump_stack();
 
-	pr_err("%s: I'M HERE\n", __func__);
+	//pr_err("%s: I'M HERE\n", __func__);
 	return clk_set_rate(sgx_clk, rate);
 }
 
@@ -383,7 +390,7 @@ static int omap4_fdif_set_rate(struct device *dev, unsigned long rate)
 	if (omap4_lpmode)
 		dump_stack();
 
-	pr_err("%s: I'M HERE\n", __func__);
+	//pr_err("%s: I'M HERE\n", __func__);
 	return clk_set_rate(fdif_clk, rate);
 }
 
