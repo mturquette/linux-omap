@@ -295,8 +295,10 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 
 	//pr_err("%s: I'M HERE\n", __func__);
 
-	if (omap4_lpmode)
-		dump_stack();
+	if (omap4_lpmode) {
+		pr_err("%s: well, shit\n", __func__);
+		return 0;
+	}
 
 	/*
 	 * XXX maybe we should program these other fixed-rate clocks as part

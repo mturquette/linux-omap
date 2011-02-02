@@ -254,6 +254,8 @@ int omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, long r)
 		return -EINVAL;
 	};
 
+	return -ENODEV;
+
 	mutex_lock(&bus_tput_mutex);
 
 	l3_dev = omap2_get_l3_device();

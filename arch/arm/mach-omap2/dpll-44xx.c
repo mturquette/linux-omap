@@ -95,6 +95,9 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 	if (!dpll_core_ck || !dd)
 		return -ENODEV;
 
+	if (omap4_lpmode)
+		return -EBUSY;
+
 	/* Just to avoid look-up on every call to speed up */
 	if (!l3_emif_clkdm)
 		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
@@ -210,17 +213,27 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 	if (!clk  || !rate)
 		return -EINVAL;
 
-	dd = dpll_core_ck->dpll_data;
-	if (!dd)
+	pr_err("%s: here0.1\n", __func__);
+	if (!clk->dpll_data)
 		return -EINVAL;
 
-	if (rate == clk_get_rate(clk))
+	dd = clk->dpll_data;
+
+	pr_err("%s: here0.3\n", __func__);
+	//unsigned long ret = clk_get_rate(clk);
+	pr_err("%s: here0.4, clk->rate is %lu, rate is %lu\n", __func__, clk->rate, rate);
+	if (rate == clk->rate)
 		return 0;
 
+	pr_err("%s: here0.5\n", __func__);
 	/* enable reference and bypass clocks */
-	clk_enable(dd->clk_bypass);
-	clk_enable(dd->clk_ref);
+	/*clk_enable(dd->clk_bypass);
+	clk_enable(dd->clk_ref);*/
 
+	omap2_clk_enable(dd->clk_bypass);
+	omap2_clk_enable(dd->clk_ref);
+
+	pr_err("%s: here0.6\n", __func__);
 	/* Just to avoid look-up on every call to speed up */
 	if (!l3_emif_clkdm)
 		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
@@ -231,16 +244,25 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 	if (!dpll_core_m2_ck)
 		dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
 
+	pr_err("%s: here0.7\n", __func__);
 	/* CM_MEMIF_CLKSTCTRL */
 	/* Make sure MEMIF clkdm is in SW_WKUP and EMIF modules are func */
 	omap2_clkdm_wakeup(l3_emif_clkdm);
-	clk_enable(emif1_fck);
-	clk_enable(emif2_fck);
+	/*clk_enable(emif1_fck);
+	clk_enable(emif2_fck);*/
 
+	/*omap2_dflt_clk_enable(emif1_fck);
+	omap2_dflt_clk_enable(emif2_fck);*/
+
+	omap2_clk_enable(emif1_fck);
+	omap2_clk_enable(emif2_fck);
+
+	pr_err("%s: here0.8\n", __func__);
 	/* check for bypass rate */
 	if (rate == dd->clk_bypass->rate &&
 			clk->dpll_data->modes & (1 << DPLL_LOW_POWER_BYPASS)) {
 		pr_err("%s: here1\n", __func__);
+		mdelay(10);
 		/*
 		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
 		 * parameters in EMIF shadow registers for bypass clock rate
@@ -277,7 +299,8 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 		pr_err("%s: here3\n", __func__);
 		new_parent = dd->clk_bypass;
 	} else {
-		pr_err("%s WRONG\n", __func__);
+		pr_err("%s: WRONG\n", __func__);
+		mdelay(10);
 		if (dd->last_rounded_rate != rate)
 			rate = clk->round_rate(clk, rate);
 
@@ -339,12 +362,14 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 		new_parent = dd->clk_ref;
 	}
 
-	pr_err("%s: here2\n", __func__);
+	pr_err("%s: here10\n", __func__);
 
 	/* wait for the configuration to be applied */
 	omap_test_timeout(((__raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1)
 					& OMAP4430_FREQ_UPDATE_MASK) == 0),
 			MAX_FREQ_UPDATE_TIMEOUT, i);
+
+	pr_err("%s: here11\n", __func__);
 	/*
 	 * Switch the parent clock in the heirarchy, and make sure that the
 	 * new parent's usecount is correct.  Note: we enable the new parent
@@ -358,12 +383,15 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 	clk_reparent(clk, new_parent);
 	clk->rate = rate;
 
+	return 0;
+	pr_err("%s: here12\n", __func__);
 	/* CM_MEMIF_CLKSTCTRL */
 	/* Configures MEMIF domain back to HW_WKUP */
 	omap2_clkdm_allow_idle(l3_emif_clkdm);
 	clk_disable(emif1_fck);
 	clk_disable(emif2_fck);
 
+	pr_err("%s: here13\n", __func__);
 	/*
 	 * FIXME PRCM functional spec says we should set GPMC_FREQ_UPDATE bit
 	 * here, but we're not even handling CM_SHADOW_FREQ_CONFIG2 at all.
@@ -375,6 +403,7 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 		return -1;
 	}
 
+	pr_err("%s: here14\n", __func__);
 	return 0;
 }
 
