@@ -80,23 +80,15 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 {
 	int i = 0;
 	u32 validrate = 0, shadow_freq_cfg1 = 0, new_div = 0;
-	struct clk *dpll_core_ck;
-	struct dpll_data *dd;
-
-	/* DPLL_CORE is parent of CORE_M2 */
-	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
-	dd = dpll_core_ck->dpll_data;
-
-	//pr_err("%s: here0\n", __func__);
-
 	if (!clk || !rate)
 		return -EINVAL;
 
-	if (!dpll_core_ck || !dd)
-		return -ENODEV;
-
 	if (omap4_lpmode)
 		return -EBUSY;
+
+	validrate = omap2_clksel_round_rate_div(clk, rate, &new_div);
+	if (validrate != rate)
+		return -EINVAL;
 
 	/* Just to avoid look-up on every call to speed up */
 	if (!l3_emif_clkdm)
@@ -106,73 +98,28 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 	/* Configures MEMIF domain in SW_WKUP */
 	omap2_clkdm_wakeup(l3_emif_clkdm);
 
-	/* check for bypass rate */
-	if (rate == dd->clk_bypass->rate) {
-		/*
-		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
-		 * parameters in EMIF shadow registers for bypass clock rate
-		 * divided by 2
-		 */
-		omap_emif_setup_registers(rate / 2, LPDDR2_VOLTAGE_STABLE);
+	/*
+	 * maybe program core m5 divider here
+	 * definitely program m3, m6 & m7 dividers here
+	 */
 
-		/*
-		 * program CM_DIV_M2_DPLL_CORE.DPLL_CLKOUT_DIV for divide by
-		 * two and put DPLL_CORE into LP Bypass
-		 */
-		shadow_freq_cfg1 =
-			(0x2 << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
-			(DPLL_LOW_POWER_BYPASS <<
-			 OMAP4430_DPLL_CORE_DPLL_EN_SHIFT) |
-			(1 << OMAP4430_DLL_RESET_SHIFT);
-		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
-		mdelay(10);
+	/*
+	 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
+	 * parameters in EMIF shadow registers for validrate divided
+	 * by 2.
+	 */
+	omap_emif_setup_registers(validrate / 2, LPDDR2_VOLTAGE_STABLE);
 
-		shadow_freq_cfg1 = __raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1);
-		shadow_freq_cfg1 |= (1 << OMAP4430_FREQ_UPDATE_SHIFT);
-		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
-	} else {
-		/* check for valid rate to lock DPLL_CORE */
-#if 1
-		/*if (omap4_lpmode) {
-			validrate = 800000000;
-			new_div = 1;
-		} else {*/
-			validrate = omap2_clksel_round_rate_div(clk, rate, &new_div);
-			if (validrate != rate)
-				return -EINVAL;
-		//}
-#else
-		if (rate == 800000000)
-			new_div = 2;
-		else if (rate == 400000000)
-			new_div = 1;
-		else
-			pr_err("%s: shouldn't be here!  rate is %lu\n",
-					__func__, rate);
-#endif
-
-		/*
-		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
-		 * parameters in EMIF shadow registers for validrate divided
-		 * by 2.
-		 */
-		omap_emif_setup_registers(rate / 2, LPDDR2_VOLTAGE_STABLE);
-
-		//pr_err("%s: here1\n", __func__);
-
-		/*
-		 * program DPLL_CORE_M2_DIV with same value as the one already
-		 * in direct register and lock DPLL_CORE
-		 */
-		shadow_freq_cfg1 =
-			(new_div << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
-			(DPLL_LOCKED << OMAP4430_DPLL_CORE_DPLL_EN_SHIFT) |
-			(1 << OMAP4430_DLL_RESET_SHIFT) |
-			(1 << OMAP4430_FREQ_UPDATE_SHIFT);
-		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
-	}
-
-	//pr_err("%s: here2\n", __func__);
+	/*
+	 * program DPLL_CORE_M2_DIV with same value as the one already
+	 * in direct register and lock DPLL_CORE
+	 */
+	shadow_freq_cfg1 =
+		(new_div << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
+		(DPLL_LOCKED << OMAP4430_DPLL_CORE_DPLL_EN_SHIFT) |
+		(1 << OMAP4430_DLL_RESET_SHIFT) |
+		(1 << OMAP4430_FREQ_UPDATE_SHIFT);
+	__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
 
 	/* wait for the configuration to be applied */
 	omap_test_timeout(((__raw_readl(OMAP4430_CM_SHADOW_FREQ_CONFIG1)
