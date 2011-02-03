@@ -299,8 +299,8 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 		pr_err("%s: here3\n", __func__);
 		new_parent = dd->clk_bypass;
 	} else {
-		pr_err("%s: WRONG\n", __func__);
-		mdelay(10);
+		pr_err("%s: here4\n", __func__);
+		//mdelay(10);
 		if (dd->last_rounded_rate != rate)
 			rate = clk->round_rate(clk, rate);
 
@@ -309,12 +309,14 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 			return -EINVAL;
 		}
 
+		pr_err("%s: here5\n", __func__);
 		/*
 		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
 		 * parameters in EMIF shadow registers for validrate divided
 		 * by 2.
 		 */
 		omap_emif_setup_registers(rate / 2, LPDDR2_VOLTAGE_STABLE);
+		pr_err("%s: here6\n", __func__);
 
 		//pr_err("%s: here1\n", __func__);
 
@@ -334,6 +336,7 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 
 		/* program mn divider values */
 		omap4_prm_rmw_reg_bits(mask, reg, dd->mult_div1_reg);
+		pr_err("%s: here7\n", __func__);
 
 		/*
 		 * FIXME PRCM functional spec says we should program
@@ -351,6 +354,7 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 		 */
 		m2_div = omap4_prm_read_bits_shift(dpll_core_m2_ck->clksel_reg,
 				dpll_core_m2_ck->clksel_mask);
+		pr_err("%s: here8, m2_div is %d\n", __func__, m2_div);
 
 		shadow_freq_cfg1 =
 			(m2_div << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
@@ -359,6 +363,7 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 			(1 << OMAP4430_FREQ_UPDATE_SHIFT);
 		__raw_writel(shadow_freq_cfg1, OMAP4430_CM_SHADOW_FREQ_CONFIG1);
 
+		pr_err("%s: here9\n", __func__);
 		new_parent = dd->clk_ref;
 	}
 
@@ -383,13 +388,13 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 	clk_reparent(clk, new_parent);
 	clk->rate = rate;
 
-	return 0;
+	//return 0;
 	pr_err("%s: here12\n", __func__);
 	/* CM_MEMIF_CLKSTCTRL */
 	/* Configures MEMIF domain back to HW_WKUP */
 	omap2_clkdm_allow_idle(l3_emif_clkdm);
-	clk_disable(emif1_fck);
-	clk_disable(emif2_fck);
+	omap2_clk_disable(emif1_fck);
+	omap2_clk_disable(emif2_fck);
 
 	pr_err("%s: here13\n", __func__);
 	/*
@@ -1028,7 +1033,15 @@ int omap4_dpll_low_power_cascade_exit()
 	/*mdelay(10);
 	pr_err("%s: here2 ret is %d, rate is %lu\n", __func__, ret, state.dpll_core_m5x2_ck_rate);*/
 
-	ret =  clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
+	/* XXX note!!! when i save/restore these values, don't save/restore
+	 * the clock frequency... that is lame!  instead save the DIVIDER
+	 * VALUE!!!  then do the following kind of thing where we divide the
+	 * already-known parent clock frequency by the saved value to get the
+	 * real deal.  CLEVER!  and slightly less of a bastardization than the
+	 * whole "forge a frequency bullshit" I was doing earlier.
+	 */
+	ret =  clk_set_rate(dpll_core_m5x2_ck, dpll_core_ck->rate / 8);
+	//ret =  clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
 	pr_err("%s: ret is %d, CM_DIV_M5_DPLL_CORE is 0x%x\n", __func__, ret,
 			__raw_readl(dpll_core_m5x2_ck->clksel_reg));
 
@@ -1042,7 +1055,7 @@ int omap4_dpll_low_power_cascade_exit()
 	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
 			__raw_readl(dpll_core_m2_ck->clksel_reg));
 #else
-	ret = clk_set_rate(dpll_core_ck, 400000000);
+	ret = clk_set_rate(dpll_core_ck, 800000000);
 	pr_err("%s: ret is %d, CM_DIV_M2_DPLL_CORE is 0x%x\n", __func__, ret,
 			__raw_readl(dpll_core_m2_ck->clksel_reg));
 #endif
