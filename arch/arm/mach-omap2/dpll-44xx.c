@@ -142,8 +142,8 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 {
 	int i = 0, m2_div;
 	u32 mask, reg;
-	u32 shadow_freq_cfg1 = 0, new_div = 0;
-	struct clk *dpll_core_ck, *new_parent;
+	u32 shadow_freq_cfg1 = 0;
+	struct clk *new_parent;
 	struct dpll_data *dd;
 
 	if (!clk  || !rate)
@@ -226,7 +226,7 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 
 		/*
 		 * DDR clock = DPLL_CORE_M2_CK / 2.  Program EMIF timing
-		 * parameters in EMIF shadow registers for validrate divided
+		 * parameters in EMIF shadow registers for rate divided
 		 * by 2.
 		 */
 		omap_emif_setup_registers(rate / 2, LPDDR2_VOLTAGE_STABLE);
@@ -261,7 +261,6 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 		 */
 		m2_div = omap4_prm_read_bits_shift(dpll_core_m2_ck->clksel_reg,
 				dpll_core_m2_ck->clksel_mask);
-		pr_err("%s: here8, m2_div is %d\n", __func__, m2_div);
 
 		shadow_freq_cfg1 =
 			(m2_div << OMAP4430_DPLL_CORE_M2_DIV_SHIFT) |
