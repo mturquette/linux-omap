@@ -296,6 +296,10 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 	clk_reparent(clk, new_parent);
 	clk->rate = rate;
 
+	/* disable reference and bypass clocks */
+	omap2_clk_disable(dd->clk_bypass);
+	omap2_clk_disable(dd->clk_ref);
+
 	/* Configures MEMIF domain back to HW_WKUP */
 	omap2_clkdm_allow_idle(l3_emif_clkdm);
 	omap2_clk_disable(emif1_fck);
@@ -665,14 +669,14 @@ int omap4_dpll_low_power_cascade_enter()
 	 * use ABE_LP_CLK to drive L4WKUP_ICLK and use 32K_FCLK to drive
 	 * ABE_DPLL_BYPASS_CLK
 	 */
-	state.l4_wkup_clk_mux_ck_parent = l4_wkup_clk_mux_ck->parent;
+	/*state.l4_wkup_clk_mux_ck_parent = l4_wkup_clk_mux_ck->parent;
 	ret = clk_set_parent(l4_wkup_clk_mux_ck, lp_clk_div_ck);
 	if (ret)
 		pr_debug("%s: failed reparenting L4WKUP_ICLK to ABE LP clock\n",
 				__func__);
 	else
 		pr_debug("%s: reparented L4WKUP_ICLK to ABE LP clock\n",
-				__func__);
+				__func__);*/
 
 	/* never de-assert CLKREQ while in DPLL cascading scheme */
 	state.clkreqctrl = __raw_readl(OMAP4430_PRM_CLKREQCTRL);
@@ -810,13 +814,6 @@ int omap4_dpll_low_power_cascade_exit()
 	/* Configures MEMIF domain in SW_WKUP */
 	omap2_clkdm_wakeup(l3_emif_clkdm);
 
-	/* drive DPLL_CORE bypass clock from SYS_CK (CLKINP) */
-	ret = clk_set_parent(core_hsd_byp_clk_mux_ck,
-			state.core_hsd_byp_clk_mux_ck_parent);
-	if (ret)
-		pr_debug("%s: failed restoring DPLL_CORE bypass clock parent\n",
-				__func__);
-
 	/* restore CORE clock rates */
 	pr_err("%s: div_core_ck divider is %lu\n", __func__,
 			omap4_prm_read_bits_shift(div_core_ck->clksel_reg,
@@ -854,6 +851,13 @@ int omap4_dpll_low_power_cascade_exit()
 	if (ret)
 		pr_debug("%s: failed to restore CORE clock rates\n", __func__);
 
+	/* drive DPLL_CORE bypass clock from SYS_CK (CLKINP) */
+	ret = clk_set_parent(core_hsd_byp_clk_mux_ck,
+			state.core_hsd_byp_clk_mux_ck_parent);
+	if (ret)
+		pr_debug("%s: failed restoring DPLL_CORE bypass clock parent\n",
+				__func__);
+
 	/* Configures MEMIF domain back to HW_WKUP */
 	omap2_clkdm_allow_idle(l3_emif_clkdm);
 
@@ -866,10 +870,10 @@ int omap4_dpll_low_power_cascade_exit()
 	/* DPLLs are configured, so let SYSCK idle again */
 
 	/* restore parent to drive L4WKUP_ICLK and ABE_DPLL_BYPASS_CLK */
-	clk_set_parent(l4_wkup_clk_mux_ck, state.l4_wkup_clk_mux_ck_parent);
+	/*clk_set_parent(l4_wkup_clk_mux_ck, state.l4_wkup_clk_mux_ck_parent);
 	if (ret)
 		pr_debug("%s: failed restoring L4WKUP_ICLK parent clock\n",
-				__func__);
+				__func__);*/
 
 	/* restore CLKREQ behavior */
 	__raw_writel(state.clkreqctrl, OMAP4430_PRM_CLKREQCTRL);
