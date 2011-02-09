@@ -40,6 +40,7 @@ static struct clk *emif1_fck, *emif2_fck;
 static struct dpll_cascade_saved_state {
 	unsigned long dpll_mpu_ck_rate;
 	unsigned long dpll_iva_ck_rate;
+	unsigned long dpll_per_ck_rate;
 	unsigned long div_mpu_hs_clk_div;
 	unsigned long div_iva_hs_clk_div;
 	struct clk *iva_hsd_byp_clk_mux_ck_parent;
@@ -55,6 +56,8 @@ static struct dpll_cascade_saved_state {
 	u32 clkreqctrl;
 	unsigned long dpll_core_ck_rate;
 	u32 dpll_core_m2_div;
+	unsigned long cm2_scale_fclk_div;
+	struct clk *per_hsd_byp_clk_mux_ck_parent;
 } state;
 
 /**
@@ -501,6 +504,8 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck;
 	struct clk *dpll_mpu_ck, *div_mpu_hs_clk;
 	struct clk *dpll_iva_ck, *div_iva_hs_clk, *iva_hsd_byp_clk_mux_ck;
+	struct clk *dpll_per_ck, *func_48m_fclk;
+	struct clk *per_hsd_byp_clk_mux_ck, *per_hs_clk_div_ck;
 	struct clk *dpll_core_ck, *dpll_core_x2_ck;
 	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck, *dpll_core_m6x2_ck;
 	struct clk *core_hsd_byp_clk_mux_ck;
@@ -529,6 +534,10 @@ int omap4_dpll_low_power_cascade_enter()
 	pmd_trace_clk_mux_ck = clk_get(NULL, "pmd_trace_clk_mux_ck");
 	l3_div_ck = clk_get(NULL, "l3_div_ck");
 	l4_div_ck = clk_get(NULL, "l4_div_ck");
+	dpll_per_ck = clk_get(NULL, "dpll_per_ck");
+	func_48m_fclk = clk_get(NULL, "func_48m_fclk");
+	per_hsd_byp_clk_mux_ck = clk_get(NULL, "per_hsd_byp_clk_mux_ck");
+	per_hs_clk_div_ck = clk_get(NULL, "per_hs_clk_div_ck");
 
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
 	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
@@ -539,7 +548,8 @@ int omap4_dpll_low_power_cascade_enter()
 		!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
 		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
 		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck ||
-		!dpll_core_ck) {
+		!dpll_core_ck || !dpll_per_ck || !func_48m_fclk
+		|| !per_hsd_byp_clk_mux_ck || !per_hs_clk_div_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -571,6 +581,17 @@ int omap4_dpll_low_power_cascade_enter()
 		pr_debug("%s: reparented DPLL_IVA bypass clock to CLKINPULOW\n",
 				__func__);
 
+	/* select CLKINPULOW (per_hs_clk_div_ck) as DPLL_PER bypass clock */
+	state.per_hsd_byp_clk_mux_ck_parent = per_hsd_byp_clk_mux_ck->parent;
+	ret = clk_set_parent(per_hsd_byp_clk_mux_ck, per_hs_clk_div_ck);
+	if (ret) {
+		pr_debug("%s: failed reparenting DPLL_PER bypass clock to CLKINPULOW\n",
+				__func__);
+		goto per_bypass_clk_reparent_fail;
+	} else
+		pr_debug("%s: reparented DPLL_PER bypass clock to CLKINPULOW\n",
+				__func__);
+
 	/* bypass DPLL_MPU */
 	state.dpll_mpu_ck_rate = dpll_mpu_ck->rate;
 	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck,
@@ -592,6 +613,23 @@ int omap4_dpll_low_power_cascade_enter()
 		goto dpll_iva_bypass_fail;
 	} else 
 		pr_debug("%s: DPLL_IVA entered Low Power bypass\n",__func__);
+
+	/* bypass DPLL_PER */
+	state.dpll_per_ck_rate = dpll_per_ck->rate;
+	ret = omap3_noncore_dpll_set_rate(dpll_per_ck,
+			dpll_per_ck->dpll_data->clk_bypass->rate);
+	if (ret) {
+		pr_debug("%s: DPLL_PER failed to enter Low Power bypass\n",
+				__func__);
+		goto dpll_per_bypass_fail;
+	} else
+		pr_debug("%s: DPLL_PER entered Low Power bypass\n",__func__);
+
+	/* run PER functional clocks at full speed */
+	state.cm2_scale_fclk_div =
+		omap4_prm_read_bits_shift(func_48m_fclk->clksel_reg,
+				func_48m_fclk->clksel_mask);
+	clk_set_rate(func_48m_fclk, (func_48m_fclk->parent->rate / 4));
 
 	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
 	state.core_hsd_byp_clk_mux_ck_parent = core_hsd_byp_clk_mux_ck->parent;
@@ -686,6 +724,10 @@ core_clock_set_rate_fail:
 				state.dpll_core_m2_ck_div));
 	clk_set_rate(div_core_ck, (div_core_ck->parent->rate /
 				state.div_core_ck_div));
+dpll_per_bypass_fail:
+	clk_set_rate(div_iva_hs_clk, (div_iva_hs_clk->parent->rate /
+				(1 << state.div_iva_hs_clk_div)));
+	clk_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);
 core_bypass_clock_reparent_fail:
 	clk_set_parent(iva_hsd_byp_clk_mux_ck,
 			state.iva_hsd_byp_clk_mux_ck_parent);
@@ -697,6 +739,9 @@ dpll_mpu_bypass_fail:
 	clk_set_rate(div_mpu_hs_clk, (div_mpu_hs_clk->parent->rate /
 				(1 << state.div_mpu_hs_clk_div)));
 	clk_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
+per_bypass_clk_reparent_fail:
+	clk_set_parent(per_hsd_byp_clk_mux_ck,
+			state.per_hsd_byp_clk_mux_ck_parent);
 iva_bypass_clk_reparent_fail:
 	clk_set_parent(iva_hsd_byp_clk_mux_ck,
 			state.iva_hsd_byp_clk_mux_ck_parent);
@@ -717,6 +762,8 @@ int omap4_dpll_low_power_cascade_exit()
 	struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck, *dpll_core_m6x2_ck;
 	struct clk *core_hsd_byp_clk_mux_ck;
 	struct clk *div_core_ck, *l3_div_ck, *l4_div_ck;
+	struct clk *dpll_per_ck, *func_48m_fclk;
+	struct clk *per_hsd_byp_clk_mux_ck, *per_hs_clk_div_ck;
 	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
 	struct clockdomain *emu_sys_44xx_clkdm, *abe_44xx_clkdm;
@@ -742,6 +789,10 @@ int omap4_dpll_low_power_cascade_exit()
 	lp_clk_div_ck = clk_get(NULL, "lp_clk_div_ck");
 	pmd_stm_clock_mux_ck = clk_get(NULL, "pmd_stm_clock_mux_ck");
 	pmd_trace_clk_mux_ck = clk_get(NULL, "pmd_trace_clk_mux_ck");
+	dpll_per_ck = clk_get(NULL, "dpll_per_ck");
+	func_48m_fclk = clk_get(NULL, "func_48m_fclk");
+	per_hsd_byp_clk_mux_ck = clk_get(NULL, "per_hsd_byp_clk_mux_ck");
+	per_hs_clk_div_ck = clk_get(NULL, "per_hs_clk_div_ck");
 
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
 	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
@@ -752,7 +803,9 @@ int omap4_dpll_low_power_cascade_exit()
 		!core_hsd_byp_clk_mux_ck || !dpll_core_m5x2_ck ||
 		!l4_wkup_clk_mux_ck || !lp_clk_div_ck || !pmd_stm_clock_mux_ck
 		|| !pmd_trace_clk_mux_ck || !dpll_core_m6x2_ck
-		|| !sys_clkin_ck || !dpll_core_ck || !l3_div_ck || !l4_div_ck) {
+		|| !sys_clkin_ck || !dpll_core_ck || !l3_div_ck || !l4_div_ck
+		|| !dpll_per_ck || !func_48m_fclk || !per_hsd_byp_clk_mux_ck
+		|| !per_hs_clk_div_ck) {
 		pr_warn("%s: failed to get all necessary clocks\n", __func__);
 		ret = -ENODEV;
 		goto out;
@@ -768,6 +821,15 @@ int omap4_dpll_low_power_cascade_exit()
 	if (ret)
 		pr_err("%s: DPLL_IVA failed to relock\n", __func__);
 
+	/* restore PER functional clocks frequency */
+	clk_set_rate(func_48m_fclk, (func_48m_fclk->parent->rate /
+				(1 << state.cm2_scale_fclk_div)));
+
+	/* lock DPLL_PER */
+	ret = omap3_noncore_dpll_set_rate(dpll_per_ck, state.dpll_per_ck_rate);
+	if (ret)
+		pr_err("%s: DPLL_PER failed to relock\n", __func__);
+
 	/* restore bypass clock rates */
 	clk_set_rate(div_mpu_hs_clk, (div_mpu_hs_clk->parent->rate /
 				(1 << state.div_mpu_hs_clk_div)));
@@ -779,6 +841,13 @@ int omap4_dpll_low_power_cascade_exit()
 			state.iva_hsd_byp_clk_mux_ck_parent);
 	if (ret)
 		pr_err("%s: failed to restore DPLL_IVA bypass clock\n",
+				__func__);
+
+	/* restore DPLL_PER bypass clock */
+	ret = clk_set_parent(per_hsd_byp_clk_mux_ck,
+			state.per_hsd_byp_clk_mux_ck_parent);
+	if (ret)
+		pr_err("%s: failed to restore DPLL_PER bypass clock\n",
 				__func__);
 
 	/* restore CORE clock rates */
@@ -804,6 +873,7 @@ int omap4_dpll_low_power_cascade_exit()
 	/* allow ABE clock domain to idle again */
 	omap2_clkdm_allow_idle(abe_44xx_clkdm);
 
+	/* allow DVFS transitions again */
 	omap4_lpmode = false;
 
 	/* DPLLs are configured, so let SYSCK idle again */
