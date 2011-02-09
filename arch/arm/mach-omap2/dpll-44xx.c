@@ -507,7 +507,7 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *div_core_ck, *l3_div_ck, *l4_div_ck;
 	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
-	struct clockdomain *emu_sys_44xx_clkdm;
+	struct clockdomain *emu_sys_44xx_clkdm, *abe_44xx_clkdm;
 
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
 	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
@@ -531,6 +531,7 @@ int omap4_dpll_low_power_cascade_enter()
 	l4_div_ck = clk_get(NULL, "l4_div_ck");
 
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
+	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
 
 	if (!dpll_abe_ck || !dpll_mpu_ck || !div_mpu_hs_clk || !dpll_iva_ck ||
 		!div_iva_hs_clk || !iva_hsd_byp_clk_mux_ck || !dpll_core_m2_ck
@@ -546,9 +547,8 @@ int omap4_dpll_low_power_cascade_enter()
 
 	omap4_lpmode = true;
 
-	/* enable DPLL_ABE and keep it on; usecount++ */
-	clk_enable(dpll_abe_ck);
-	omap3_dpll_deny_idle(dpll_abe_ck);
+	/* prevent ABE clock domain from idling */
+	omap2_clkdm_deny_idle(abe_44xx_clkdm);
 
 	/* divide MPU/IVA bypass clocks by 2 (for when we bypass DPLL_CORE) */
 	state.div_mpu_hs_clk_div =
@@ -560,17 +560,13 @@ int omap4_dpll_low_power_cascade_enter()
 	clk_set_rate(div_mpu_hs_clk, div_mpu_hs_clk->parent->rate / 2);
 	clk_set_rate(div_iva_hs_clk, div_iva_hs_clk->parent->rate / 2);
 
-	/* prevent DPLL_MPU & DPLL_IVA from idling */
-	omap3_dpll_deny_idle(dpll_mpu_ck);
-	omap3_dpll_deny_idle(dpll_iva_ck);
-
 	/* select CLKINPULOW (div_iva_hs_clk) as DPLL_IVA bypass clock */
 	state.iva_hsd_byp_clk_mux_ck_parent = iva_hsd_byp_clk_mux_ck->parent;
 	ret = clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
 	if (ret) {
 		pr_debug("%s: failed reparenting DPLL_IVA bypass clock to CLKINPULOW\n",
 				__func__);
-		goto iva_hsd_byp_clk_mux_ck_parent;
+		goto iva_bypass_clk_reparent_fail;
 	} else
 		pr_debug("%s: reparented DPLL_IVA bypass clock to CLKINPULOW\n",
 				__func__);
@@ -701,11 +697,10 @@ dpll_mpu_bypass_fail:
 	clk_set_rate(div_mpu_hs_clk, (div_mpu_hs_clk->parent->rate /
 				(1 << state.div_mpu_hs_clk_div)));
 	clk_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
-iva_hsd_byp_clk_mux_ck_parent:
+iva_bypass_clk_reparent_fail:
 	clk_set_parent(iva_hsd_byp_clk_mux_ck,
 			state.iva_hsd_byp_clk_mux_ck_parent);
-	omap3_dpll_allow_idle(dpll_iva_ck);
-	omap3_dpll_allow_idle(dpll_mpu_ck);
+	omap2_clkdm_allow_idle(abe_44xx_clkdm);
 	omap4_lpmode = false;
 out:
 	return ret;
@@ -724,7 +719,7 @@ int omap4_dpll_low_power_cascade_exit()
 	struct clk *div_core_ck, *l3_div_ck, *l4_div_ck;
 	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
-	struct clockdomain *emu_sys_44xx_clkdm;
+	struct clockdomain *emu_sys_44xx_clkdm, *abe_44xx_clkdm;
 
 	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
@@ -749,6 +744,7 @@ int omap4_dpll_low_power_cascade_exit()
 	pmd_trace_clk_mux_ck = clk_get(NULL, "pmd_trace_clk_mux_ck");
 
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
+	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
 
 	if (!dpll_abe_ck || !dpll_mpu_ck || !div_mpu_hs_clk || !dpll_iva_ck ||
 		!div_iva_hs_clk || !iva_hsd_byp_clk_mux_ck || !dpll_core_m2_ck
@@ -785,13 +781,6 @@ int omap4_dpll_low_power_cascade_exit()
 		pr_err("%s: failed to restore DPLL_IVA bypass clock\n",
 				__func__);
 
-	/* Just to avoid look-up on every call to speed up */
-	if (!l3_emif_clkdm)
-		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
-
-	/* Configures MEMIF domain in SW_WKUP */
-	omap2_clkdm_wakeup(l3_emif_clkdm);
-
 	/* restore CORE clock rates */
 	ret = clk_set_rate(div_core_ck, (div_core_ck->parent->rate /
 				(1 << state.div_core_ck_div)));
@@ -812,12 +801,8 @@ int omap4_dpll_low_power_cascade_exit()
 		pr_debug("%s: failed restoring DPLL_CORE bypass clock parent\n",
 				__func__);
 
-	/* Configures MEMIF domain back to HW_WKUP */
-	omap2_clkdm_allow_idle(l3_emif_clkdm);
-
-	/* allow DPLL_MPU & DPLL_IVA to idle */
-	omap3_dpll_allow_idle(dpll_mpu_ck);
-	omap3_dpll_allow_idle(dpll_iva_ck);
+	/* allow ABE clock domain to idle again */
+	omap2_clkdm_allow_idle(abe_44xx_clkdm);
 
 	omap4_lpmode = false;
 
