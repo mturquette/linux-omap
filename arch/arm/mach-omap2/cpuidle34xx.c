@@ -63,7 +63,7 @@ struct omap3_processor_cx {
 struct omap3_processor_cx omap3_power_states[OMAP3_MAX_STATES];
 struct omap3_processor_cx current_cx_state;
 struct powerdomain *mpu_pd, *core_pd, *per_pd;
-struct powerdomain *cam_pd;
+struct powerdomain *cam_pd, *dss_pd, *iva2_pd, *sgx_pd, *usb_pd;
 
 /*
  * The latencies/thresholds for various C states have
@@ -237,7 +237,7 @@ static int omap3_enter_idle_bm(struct cpuidle_device *dev,
 {
 	struct cpuidle_state *new_state = next_valid_state(dev, state);
 	u32 core_next_state, per_next_state = 0, per_saved_state = 0;
-	u32 cam_state;
+	u32 cam_state, dss_state, iva2_state, sgx_state, usb_state;
 	struct omap3_processor_cx *cx;
 	int ret;
 
@@ -258,6 +258,8 @@ static int omap3_enter_idle_bm(struct cpuidle_device *dev,
 	 *        its own code.
 	 */
 
+	/* XXX Add CORE-active check here */
+
 	/*
 	 * Prevent idle completely if CAM is active.
 	 * CAM does not have wakeup capability in OMAP3.
@@ -276,6 +278,36 @@ static int omap3_enter_idle_bm(struct cpuidle_device *dev,
 	if ((per_next_state == PWRDM_POWER_OFF) &&
 	    (core_next_state > PWRDM_POWER_RET))
 		per_next_state = PWRDM_POWER_RET;
+
+	/* XXX Add prevent-PER-off check here */
+
+	/*
+	 * If we are attempting CORE off, check if any other powerdomains
+	 * are at retention or higher. CORE off causes chipwide reset which
+	 * would reset these domains also.
+	 */
+	if (core_next_state == PWRDM_POWER_OFF) {
+		iva2_state = pwrdm_read_pwrst(iva2_pd);
+		sgx_state = pwrdm_read_pwrst(sgx_pd);
+		usb_state = pwrdm_read_pwrst(usb_pd);
+		dss_state = pwrdm_read_pwrst(dss_pd);
+
+		if (cam_state > PWRDM_POWER_OFF ||
+		    dss_state > PWRDM_POWER_OFF ||
+		    iva2_state > PWRDM_POWER_OFF ||
+		    per_next_state > PWRDM_POWER_OFF ||
+		    sgx_state > PWRDM_POWER_OFF ||
+		    usb_state > PWRDM_POWER_OFF)
+			core_next_state = PWRDM_POWER_RET;
+	}
+
+	/* Fallback to new target core/mpu state */
+	while (cx->core_state < core_next_state) {
+		state--;
+		cx = cpuidle_get_statedata(state);
+	}
+
+	new_state = state;
 
 	/* Are we changing PER target state? */
 	if (per_next_state != per_saved_state)
@@ -464,7 +496,7 @@ void omap_init_power_states(void)
 	if (IS_PM34XX_ERRATUM(PM_SDRC_WAKEUP_ERRATUM_i583)) {
 		omap3_power_states[OMAP3_STATE_C7].valid = 0;
 		cpuidle_params_table[OMAP3_STATE_C7].valid = 0;
-		WARN_ONCE(1, "%s: core off state C7 disabled due to i583\n",
+		pr_warn("%s: core off state C7 disabled due to i583\n",
 				__func__);
 	}
 }
@@ -491,6 +523,10 @@ int __init omap3_idle_init(void)
 	core_pd = pwrdm_lookup("core_pwrdm");
 	per_pd = pwrdm_lookup("per_pwrdm");
 	cam_pd = pwrdm_lookup("cam_pwrdm");
+	dss_pd = pwrdm_lookup("dss_pwrdm");
+	iva2_pd = pwrdm_lookup("iva2_pwrdm");
+	sgx_pd = pwrdm_lookup("sgx_pwrdm");
+	usb_pd = pwrdm_lookup("usbhost_pwrdm");
 
 	omap_init_power_states();
 	cpuidle_register_driver(&omap3_idle_driver);

@@ -29,6 +29,7 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/console.h>
+#include <trace/events/power.h>
 
 #include <plat/sram.h>
 #include "clockdomain.h"
@@ -519,7 +520,13 @@ static void omap3_pm_idle(void)
 	if (omap_irq_pending() || need_resched())
 		goto out;
 
+	trace_power_start(POWER_CSTATE, 1, smp_processor_id());
+	trace_cpu_idle(1, smp_processor_id());
+
 	omap_sram_idle();
+
+	trace_power_end(smp_processor_id());
+	trace_cpu_idle(PWR_EVENT_EXIT, smp_processor_id());
 
 out:
 	local_fiq_enable();
@@ -694,21 +701,6 @@ static void __init prcm_setup_regs(void)
 					OMAP3630_EN_UART4_MASK : 0;
 	u32 omap3630_grpsel_uart4_mask = cpu_is_omap3630() ?
 					OMAP3630_GRPSEL_UART4_MASK : 0;
-
-
-	/* XXX Reset all wkdeps. This should be done when initializing
-	 * powerdomains */
-	omap2_prm_write_mod_reg(0, OMAP3430_IVA2_MOD, PM_WKDEP);
-	omap2_prm_write_mod_reg(0, MPU_MOD, PM_WKDEP);
-	omap2_prm_write_mod_reg(0, OMAP3430_DSS_MOD, PM_WKDEP);
-	omap2_prm_write_mod_reg(0, OMAP3430_NEON_MOD, PM_WKDEP);
-	omap2_prm_write_mod_reg(0, OMAP3430_CAM_MOD, PM_WKDEP);
-	omap2_prm_write_mod_reg(0, OMAP3430_PER_MOD, PM_WKDEP);
-	if (omap_rev() > OMAP3430_REV_ES1_0) {
-		omap2_prm_write_mod_reg(0, OMAP3430ES2_SGX_MOD, PM_WKDEP);
-		omap2_prm_write_mod_reg(0, OMAP3430ES2_USBHOST_MOD, PM_WKDEP);
-	} else
-		omap2_prm_write_mod_reg(0, GFX_MOD, PM_WKDEP);
 
 	/*
 	 * Enable interface clock autoidle for all modules.
@@ -928,8 +920,7 @@ void omap3_pm_off_mode_enable(int enable)
 				pwrst->pwrdm == core_pwrdm &&
 				state == PWRDM_POWER_OFF) {
 			pwrst->next_state = PWRDM_POWER_RET;
-			WARN_ONCE(1,
-				"%s: Core OFF disabled due to errata i583\n",
+			pr_warn("%s: Core OFF disabled due to errata i583\n",
 				__func__);
 		} else {
 			pwrst->next_state = state;
