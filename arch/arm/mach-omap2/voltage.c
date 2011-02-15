@@ -729,6 +729,9 @@ static int __init omap3_vdd_data_configure(struct omap_vdd_info *vdd)
 		return -EINVAL;
 	}
 
+	/* initialize the voltage change notifier chain */
+	srcu_init_notifier_head(&vdd->volt_change_notify_chain);
+
 	if (!strcmp(vdd->voltdm.name, "mpu")) {
 		if (cpu_is_omap3630()) {
 			vdd->volt_data = omap36xx_vddmpu_volt_data;
@@ -911,6 +914,9 @@ static int __init omap4_vdd_data_configure(struct omap_vdd_info *vdd)
 			__func__, vdd->voltdm.name, vdd->voltdm.name);
 		return -EINVAL;
 	}
+
+	/* initialize the voltage change notifier chain */
+	srcu_init_notifier_head(&vdd->volt_change_notify_chain);
 
 	if (!strcmp(vdd->voltdm.name, "mpu")) {
 		vdd->volt_data = omap44xx_vdd_mpu_volt_data;
@@ -1201,7 +1207,9 @@ void omap_vp_disable(struct voltagedomain *voltdm)
 int omap_voltage_scale_vdd(struct voltagedomain *voltdm,
 		unsigned long target_volt)
 {
+	int ret;
 	struct omap_vdd_info *vdd;
+	struct omap_volt_change_info v_info;
 
 	if (!voltdm || IS_ERR(voltdm)) {
 		pr_warning("%s: VDD specified does not exist!\n", __func__);
@@ -1216,7 +1224,20 @@ int omap_voltage_scale_vdd(struct voltagedomain *voltdm,
 		return -ENODATA;
 	}
 
-	return vdd->volt_scale(vdd, target_volt);
+	/* load notifier chain data */
+	v_info.target_volt = target_volt;
+	v_info.vdd = vdd;
+
+	srcu_notifier_call_chain(&vdd->volt_change_notify_chain,
+			VOLTSCALE_PRECHANGE, (void *)&v_info);
+
+	ret = vdd->volt_scale(vdd, target_volt);
+
+	if (!ret)
+		srcu_notifier_call_chain(&vdd->volt_change_notify_chain,
+				VOLTSCALE_POSTCHANGE, (void *)&v_info);
+
+	return ret;
 }
 
 /**
@@ -1435,6 +1456,30 @@ struct voltagedomain *omap_voltage_domain_lookup(char *name)
 	}
 
 	return ERR_PTR(-EINVAL);
+}
+
+int omap_voltage_register_notifier(struct omap_vdd_info *vdd,
+		struct notifier_block *nb)
+{
+	if (!vdd || IS_ERR(vdd)) {
+		pr_warning("%s: invalid VDD specified\n", __func__);
+		return -EINVAL;
+	}
+
+	return srcu_notifier_chain_register(&vdd->volt_change_notify_chain,
+			nb);
+}
+
+int omap_voltage_unregister_notifier(struct omap_vdd_info *vdd,
+		struct notifier_block *nb)
+{
+	if (!vdd || IS_ERR(vdd)) {
+		pr_warning("%s: invalid VDD specified\n", __func__);
+		return -EINVAL;
+	}
+
+	return srcu_notifier_chain_unregister(&vdd->volt_change_notify_chain,
+			nb);
 }
 
 /**

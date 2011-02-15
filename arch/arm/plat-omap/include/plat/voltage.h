@@ -15,9 +15,13 @@
 #define __ARCH_ARM_MACH_OMAP2_VOLTAGE_H
 
 #include <linux/err.h>
+#include <linux/notifier.h>
 
 #define VOLTSCALE_VPFORCEUPDATE		1
 #define VOLTSCALE_VCBYPASS		2
+
+#define VOLTSCALE_PRECHANGE		0
+#define VOLTSCALE_POSTCHANGE		1
 
 /*
  * OMAP3 GENERIC setup times. Revisit to see if these needs to be
@@ -249,6 +253,7 @@ struct omap_vdd_info {
 	struct vc_reg_info vc_reg;
 	struct voltagedomain voltdm;
 	struct omap_vdd_dep_info *dep_vdd_info;
+	struct srcu_notifier_head volt_change_notify_chain;
 	int nr_dep_vdd;
 	struct dentry *debug_dir;
 	u32 curr_volt;
@@ -259,6 +264,17 @@ struct omap_vdd_info {
 	void (*write_reg) (u32 val, u16 mod, u8 offset);
 	int (*volt_scale) (struct omap_vdd_info *vdd,
 		unsigned long target_volt);
+};
+
+/**
+ * omap_volt_change_info - container used by voltage notifier chain
+ *
+ * @vdd_info		: the voltage domain affected by the transition
+ * @target_volt		: voltage the affected domain is transitioning to
+ */
+struct omap_volt_change_info {
+	unsigned long target_volt;
+	struct omap_vdd_info *vdd;
 };
 
 unsigned long omap_vp_get_curr_volt(struct voltagedomain *voltdm);
@@ -280,6 +296,10 @@ void omap_change_voltscale_method(struct voltagedomain *voltdm,
 		int voltscale_method);
 /* API to get the voltagedomain pointer */
 struct voltagedomain *omap_voltage_domain_lookup(char *name);
+int omap_voltage_register_notifier(struct omap_vdd_info *vdd,
+		struct notifier_block *nb);
+int omap_voltage_unregister_notifier(struct omap_vdd_info *vdd,
+		struct notifier_block *nb);
 
 int omap_voltage_late_init(void);
 #else
@@ -297,6 +317,16 @@ static inline int omap_voltage_late_init(void)
 static inline struct voltagedomain *omap_voltage_domain_lookup(char *name)
 {
 	return ERR_PTR(-EINVAL);
+}
+static inline int omap_voltage_register_notifier(struct omap_vdd_info *vdd,
+		struct notifier block *nb)
+{
+	return 0;
+}
+static inline int omap_voltage_unregister_notifier(struct omap_vdd_info *vdd,
+		struct notifier block *nb)
+{
+	return 0;
 }
 #endif
 
