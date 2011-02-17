@@ -82,12 +82,16 @@ struct voltagedomain {
  *			with voltage.
  * @vp_errorgain:	Error gain value for the voltage processor. This
  *			field also differs according to the voltage/opp.
+ * @abb_opp:		State that ABB LDO should be in at this voltage.
+ * 			LDO can be in Forward Body-Bias, Reverse Body-Bias or
+ * 			Bypassed.
  */
 struct omap_volt_data {
 	u32	volt_nominal;
 	u32	sr_efuse_offs;
 	u8	sr_errminlimit;
 	u8	vp_errgain;
+	u8	abb_opp;
 };
 
 /**
@@ -223,6 +227,29 @@ struct omap_vdd_dep_info {
 	struct omap_vdd_dep_volt *dep_table;
 };
 
+/**
+ * omap_abb_info - Adaptive Body-Bias info for a single VDD
+ *
+ * @setup_offs		: PRM_LDO_ABB_SETUP register offset
+ * @ctrl_offs		: PRM_LDO_ABB_CTRL register offset
+ * @irqstatus_mpu_offs	: PRM_IRQSTATUS_MPU* register offset
+ * @done_st_shift	: ABB_vdd_DONE_ST shift
+ * @done_st_mask	: ABB_vdd_DONE_ST bit mask
+ * @configure		: boot-time configuration
+ * @nb_handler		: voltage transition notification handler
+ * @set_opp		: transition function called from nb_handler
+ */
+struct omap_abb_info {
+	u8 setup_offs;
+	u8 ctrl_offs;
+	u8 irqstatus_mpu_offs;
+	u8 done_st_shift;
+	u32 done_st_mask;
+	int (*configure) (struct omap_abb_info *abb);
+	int (*nb_handler) (struct notifier_block *nb, unsigned long val,
+			void *data);
+	int (*set_opp) (struct omap_abb_info *abb, int opp_type);
+};
 
 /**
  * omap_vdd_info - Per Voltage Domain info
@@ -253,6 +280,7 @@ struct omap_vdd_info {
 	struct vc_reg_info vc_reg;
 	struct voltagedomain voltdm;
 	struct omap_vdd_dep_info *dep_vdd_info;
+	struct omap_abb_info abb;
 	struct srcu_notifier_head volt_change_notify_chain;
 	int nr_dep_vdd;
 	struct dentry *debug_dir;
