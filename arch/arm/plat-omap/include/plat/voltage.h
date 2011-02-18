@@ -235,8 +235,8 @@ struct omap_vdd_dep_info {
  * @irqstatus_mpu_offs	: PRM_IRQSTATUS_MPU* register offset
  * @done_st_shift	: ABB_vdd_DONE_ST shift
  * @done_st_mask	: ABB_vdd_DONE_ST bit mask
+ * @nb			: voltage transition notifier block
  * @configure		: boot-time configuration
- * @nb_handler		: voltage transition notification handler
  * @set_opp		: transition function called from nb_handler
  */
 struct omap_abb_info {
@@ -245,9 +245,8 @@ struct omap_abb_info {
 	u8 irqstatus_mpu_offs;
 	u8 done_st_shift;
 	u32 done_st_mask;
+	struct notifier_block nb;
 	int (*configure) (struct omap_abb_info *abb);
-	int (*nb_handler) (struct notifier_block *nb, unsigned long val,
-			void *data);
 	int (*set_opp) (struct omap_abb_info *abb, int opp_type);
 };
 
@@ -302,6 +301,7 @@ struct omap_vdd_info {
  */
 struct omap_volt_change_info {
 	unsigned long target_volt;
+	unsigned long curr_volt;
 	struct omap_vdd_info *vdd;
 };
 
