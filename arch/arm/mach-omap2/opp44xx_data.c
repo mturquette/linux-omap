@@ -94,6 +94,8 @@ static struct omap_opp_def __initdata omap44xx_pre_es2_1_opp_def_list[] = {
 };
 
 static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
+	/* MPU OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("mpu", false, 98304000, 928000),
 	/* MPU OPP1 - OPP50 */
 	OMAP_OPP_DEF("mpu", true, 300000000, 930000),
 	/* MPU OPP2 - OPP100 */
@@ -102,50 +104,71 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	OMAP_OPP_DEF("mpu", true, 800000000, 1260000),
 	/* MPU OPP4 - OPP-SB */
 	OMAP_OPP_DEF("mpu", true, 1008000000, 1350000),
-	/* IVA OPP1 - OPP50_98 */
-	OMAP_OPP_DEF("iva", true,  133000000, 928000),
+
+	/* IVA OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("iva", false,  98304000, 928000),
 	/* IVA OPP1 - OPP50 */
 	OMAP_OPP_DEF("iva", true,  133000000, 930000),
 	/* IVA OPP2 - OPP100 */
 	OMAP_OPP_DEF("iva", true,  266000000, 1100000),
 	/* IVA OPP3 - OPP-Turbo */
 	OMAP_OPP_DEF("iva", false, 332000000, 1260000),
-	/* DSP OPP1 - OPP50_98 */
-	OMAP_OPP_DEF("dsp", true, 232800000, 928000),
+
+	/* DSP OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("dsp", false, 98304000, 928000),
 	/* DSP OPP1 - OPP50 */
 	OMAP_OPP_DEF("dsp", true, 232800000, 930000),
 	/* DSP OPP2 - OPP100 */
 	OMAP_OPP_DEF("dsp", true, 465600000, 1100000),
 	/* DSP OPP3 - OPPTB */
 	OMAP_OPP_DEF("dsp", false, 498000000, 1260000),
-	/* ABE OPP - OPP50_98 */
-	OMAP_OPP_DEF("omap-aess-audio", true, 49152000, 928000),
+
+	/* ABE OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("omap-aess-audio", false, 98304000, 928000),
 	/* ABE OPP1 - OPP50 */
 	OMAP_OPP_DEF("omap-aess-audio", true, 98304000, 930000),
 	/* ABE OPP2 - OPP100 */
 	OMAP_OPP_DEF("omap-aess-audio", true, 196600000, 1100000),
 	/* ABE OPP3 - OPPTB */
 	OMAP_OPP_DEF("omap-aess-audio", false, 196600000, 1260000),
+
+	/* L3 OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("l3_main_1", false, 98304000, 928000),
 	/* L3 OPP1 - OPP50 */
 	OMAP_OPP_DEF("l3_main_1", true, 100000000, 930000),
 	/* L3 OPP2 - OPP100, OPP-Turbo, OPP-SB */
 	OMAP_OPP_DEF("l3_main_1", true, 200000000, 1100000),
+
+	/* EMIF1 OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("emif1", false, 196608000, 928000),
 	/*EMIF1 OPP1 - OPP50 */
 	OMAP_OPP_DEF("emif1", true, 400000000, 930000),
 	/*EMIF1 OPP2 - OPP100 */
 	OMAP_OPP_DEF("emif1", true, 800000000, 1100000),
+
+	/* EMIF2 OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("emif2", false, 196608000, 928000),
 	/*EMIF2 OPP1 - OPP50 */
 	OMAP_OPP_DEF("emif2", true, 400000000, 930000),
 	/*EMIF2 OPP2 - OPP100 */
 	OMAP_OPP_DEF("emif2", true, 800000000, 1100000),
+
+	/* CAM FDIF OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("fdif", false, 49152000, 928000),
 	/* CAM FDIF OPP1 - OPP50 */
 	OMAP_OPP_DEF("fdif", true, 64000000, 930000),
 	/* CAM FDIF OPP2 - OPP100 */
 	OMAP_OPP_DEF("fdif", true, 128000000, 1100000),
+
+	/* SGX OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("gpu", false, 196608000, 928000),
 	/* SGX OPP1 - OPP50 */
 	OMAP_OPP_DEF("gpu", true, 153600000, 930000),
 	/* SGX OPP2 - OPP100 */
 	OMAP_OPP_DEF("gpu", true, 307200000, 1100000),
+
+	/* HSI OPPLP - DPLL cascading */
+	OMAP_OPP_DEF("hsi", false, 98304000, 928000),
 	/* HSI OPP1 - OPP50 */
 	OMAP_OPP_DEF("hsi", true, 96000000, 930000),
 	/* HSI OPP2 - OPP100 */
