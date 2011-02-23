@@ -630,7 +630,7 @@ int omap4_dpll_low_power_cascade_enter()
 		omap4_prm_read_bits_shift(dpll_core_m2_ck->clksel_reg,
 				dpll_core_m2_ck->clksel_mask);
 
-	ret =  clk_set_rate(div_core_ck, (dpll_core_m5x2_ck->rate / 2));
+	ret =  clk_set_rate(div_core_ck, dpll_core_m5x2_ck->rate);
 	ret |= clk_set_rate(dpll_core_ck, 196608000);
 	ret |= clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
 	if (ret) {
