@@ -644,14 +644,14 @@ int omap4_dpll_low_power_cascade_enter()
 	 * use ABE_LP_CLK to drive L4WKUP_ICLK and use 32K_FCLK to drive
 	 * ABE_DPLL_BYPASS_CLK
 	 */
-	/*state.l4_wkup_clk_mux_ck_parent = l4_wkup_clk_mux_ck->parent;
+	state.l4_wkup_clk_mux_ck_parent = l4_wkup_clk_mux_ck->parent;
 	ret = clk_set_parent(l4_wkup_clk_mux_ck, lp_clk_div_ck);
 	if (ret)
 		pr_debug("%s: failed reparenting L4WKUP_ICLK to ABE LP clock\n",
 				__func__);
 	else
 		pr_debug("%s: reparented L4WKUP_ICLK to ABE LP clock\n",
-				__func__);*/
+				__func__);
 
 	/* never de-assert CLKREQ while in DPLL cascading scheme */
 	state.clkreqctrl = __raw_readl(OMAP4430_PRM_CLKREQCTRL);
@@ -806,10 +806,10 @@ int omap4_dpll_low_power_cascade_exit()
 	omap4_lpmode = false;
 
 	/* restore parent to drive L4WKUP_ICLK and ABE_DPLL_BYPASS_CLK */
-	/*clk_set_parent(l4_wkup_clk_mux_ck, state.l4_wkup_clk_mux_ck_parent);
+	clk_set_parent(l4_wkup_clk_mux_ck, state.l4_wkup_clk_mux_ck_parent);
 	if (ret)
 		pr_debug("%s: failed restoring L4WKUP_ICLK parent clock\n",
-				__func__);*/
+				__func__);
 
 	/* restore CLKREQ behavior */
 	__raw_writel(state.clkreqctrl, OMAP4430_PRM_CLKREQCTRL);
