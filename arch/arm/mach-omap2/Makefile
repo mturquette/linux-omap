@@ -52,6 +52,7 @@ obj-$(CONFIG_ARCH_OMAP2)		+= sdrc2xxx.o
 
 # Power Management
 ifeq ($(CONFIG_PM),y)
+CFLAGS_dpll-44xx.o			+= -DDEBUG
 obj-$(CONFIG_ARCH_OMAP2)		+= pm24xx.o
 obj-$(CONFIG_ARCH_OMAP2)		+= sleep24xx.o
 obj-$(CONFIG_ARCH_OMAP3)		+= pm34xx.o sleep34xx.o voltage.o \

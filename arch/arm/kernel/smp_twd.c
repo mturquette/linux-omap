@@ -222,6 +222,7 @@ static int twd_cpufreq_notifier(struct notifier_block *nb,
 {
 	struct cpufreq_freqs *freq = data;
 
+	pr_err("%s: freq->cpu is %d\n", __func__, freq->cpu);
 	/*
 	 * FIXME: If we need to calibrate before freq change. Currently
 	 * only after CPU freq change is done, timer clock is recalibrated

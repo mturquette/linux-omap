@@ -64,7 +64,7 @@ static struct cpuidle_params cpuidle_params_table[] = {
 	/* C3 - CPU0 OFF + CPU1 OFF + MPU CSWR + CORE OSWR  */
 	{1,	1516,	3230,	15000},
 	/* C4 - CPU0 OFF + CPU1 OFF + MPU OSWR + CORE OSWR */
-	{1,	1644,	3298,	39000},
+	{0,	1644,	3298,	39000},
 };
 
 static int omap4_idle_bm_check(void)

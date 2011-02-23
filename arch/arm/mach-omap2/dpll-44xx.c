@@ -18,6 +18,8 @@
 #include <plat/common.h>
 #include <plat/clockdomain.h>
 #include <plat/prcm.h>
+#include <plat/omap_device.h>
+#include <linux/cpufreq.h>
 
 #include <mach/emif.h>
 #include <mach/omap4-common.h>
@@ -30,12 +32,15 @@
 
 #define MAX_FREQ_UPDATE_TIMEOUT  100000
 #define DPLL_REGM4XEN_ENABLE	0x1
+#define LP_196M			196608000
+#define LP_98M			98304000
 
 bool omap4_lpmode = false;
 
 static struct clockdomain *l3_emif_clkdm;
 static struct clk *dpll_core_m2_ck;
 static struct clk *emif1_fck, *emif2_fck;
+static struct device dummy_lp_dev;
 
 static struct dpll_cascade_saved_state {
 	unsigned long dpll_mpu_ck_rate;
@@ -508,6 +513,8 @@ int omap4_dpll_low_power_cascade_enter()
 	struct clk *l4_wkup_clk_mux_ck, *lp_clk_div_ck;
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
 	struct clockdomain *emu_sys_44xx_clkdm, *abe_44xx_clkdm;
+	struct device *mpu_dev, *iva_dev, *l3_dev;
+	struct cpufreq_policy *cp;
 
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
 	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
@@ -588,7 +595,7 @@ int omap4_dpll_low_power_cascade_enter()
 				dpll_core_m2_ck->clksel_mask);
 
 	ret =  clk_set_rate(div_core_ck, dpll_core_m5x2_ck->rate);
-	ret |= clk_set_rate(dpll_core_ck, 196608000);
+	ret |= clk_set_rate(dpll_core_ck, LP_196M);
 	ret |= clk_set_rate(dpll_core_m5x2_ck, dpll_core_x2_ck->rate);
 	if (ret) {
 		pr_debug("%s: failed setting CORE clock rates\n", __func__);
@@ -620,6 +627,7 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* bypass DPLL_MPU */
 	state.dpll_mpu_ck_rate = dpll_mpu_ck->rate;
+#if 1
 	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck,
 			dpll_mpu_ck->dpll_data->clk_bypass->rate);
 	if (ret) {
@@ -628,6 +636,18 @@ int omap4_dpll_low_power_cascade_enter()
 		goto dpll_mpu_bypass_fail;
 	} else
 		pr_debug("%s: DPLL_MPU entered Low Power bypass\n", __func__);
+#else
+	/*mpu_dev = omap2_get_mpuss_device();
+	omap_device_set_rate(&dummy_lp_dev, mpu_dev,
+			dpll_mpu_ck->dpll_data->clk_bypass->rate);*/
+#endif
+
+	cp = cpufreq_cpu_get(0);
+	pr_err("%s: cur = %u, min = %u, max = %u\n", __func__,
+			cp->cur, cp->min, cp->max);
+	cpufreq_driver_target(cp, LP_98M, CPUFREQ_RELATION_H);
+	pr_err("%s: cur = %u, min = %u, max = %u\n", __func__,
+			cp->cur, cp->min, cp->max);
 
 	/* bypass DPLL_IVA */
 	state.dpll_iva_ck_rate = dpll_iva_ck->rate;
