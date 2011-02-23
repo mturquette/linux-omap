@@ -550,49 +550,6 @@ int omap4_dpll_low_power_cascade_enter()
 	/* prevent ABE clock domain from idling */
 	omap2_clkdm_deny_idle(abe_44xx_clkdm);
 
-	/* divide MPU/IVA bypass clocks by 2 (for when we bypass DPLL_CORE) */
-	state.div_mpu_hs_clk_div =
-		omap4_prm_read_bits_shift(div_mpu_hs_clk->clksel_reg,
-				div_mpu_hs_clk->clksel_mask);
-	state.div_iva_hs_clk_div =
-		omap4_prm_read_bits_shift(div_iva_hs_clk->clksel_reg,
-				div_iva_hs_clk->clksel_mask);
-	clk_set_rate(div_mpu_hs_clk, div_mpu_hs_clk->parent->rate / 2);
-	clk_set_rate(div_iva_hs_clk, div_iva_hs_clk->parent->rate / 2);
-
-	/* select CLKINPULOW (div_iva_hs_clk) as DPLL_IVA bypass clock */
-	state.iva_hsd_byp_clk_mux_ck_parent = iva_hsd_byp_clk_mux_ck->parent;
-	ret = clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
-	if (ret) {
-		pr_debug("%s: failed reparenting DPLL_IVA bypass clock to CLKINPULOW\n",
-				__func__);
-		goto iva_bypass_clk_reparent_fail;
-	} else
-		pr_debug("%s: reparented DPLL_IVA bypass clock to CLKINPULOW\n",
-				__func__);
-
-	/* bypass DPLL_MPU */
-	state.dpll_mpu_ck_rate = dpll_mpu_ck->rate;
-	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck,
-			dpll_mpu_ck->dpll_data->clk_bypass->rate);
-	if (ret) {
-		pr_debug("%s: DPLL_MPU failed to enter Low Power bypass\n",
-				__func__);
-		goto dpll_mpu_bypass_fail;
-	} else
-		pr_debug("%s: DPLL_MPU entered Low Power bypass\n", __func__);
-
-	/* bypass DPLL_IVA */
-	state.dpll_iva_ck_rate = dpll_iva_ck->rate;
-	ret = omap3_noncore_dpll_set_rate(dpll_iva_ck,
-			dpll_iva_ck->dpll_data->clk_bypass->rate);
-	if (ret) {
-		pr_debug("%s: DPLL_IVA failed to enter Low Power bypass\n",
-				__func__);
-		goto dpll_iva_bypass_fail;
-	} else
-		pr_debug("%s: DPLL_IVA entered Low Power bypass\n", __func__);
-
 	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
 	state.core_hsd_byp_clk_mux_ck_parent = core_hsd_byp_clk_mux_ck->parent;
 	ret = clk_set_parent(core_hsd_byp_clk_mux_ck, dpll_abe_m3x2_ck);
@@ -639,6 +596,49 @@ int omap4_dpll_low_power_cascade_enter()
 	} else
 		pr_debug("%s: DPLL_CORE bypass clock reparented to ABE_M3X2\n",
 				__func__);
+
+	/* divide MPU/IVA bypass clocks by 2 (for when we bypass DPLL_CORE) */
+	state.div_mpu_hs_clk_div =
+		omap4_prm_read_bits_shift(div_mpu_hs_clk->clksel_reg,
+				div_mpu_hs_clk->clksel_mask);
+	state.div_iva_hs_clk_div =
+		omap4_prm_read_bits_shift(div_iva_hs_clk->clksel_reg,
+				div_iva_hs_clk->clksel_mask);
+	clk_set_rate(div_mpu_hs_clk, div_mpu_hs_clk->parent->rate / 2);
+	clk_set_rate(div_iva_hs_clk, div_iva_hs_clk->parent->rate / 2);
+
+	/* select CLKINPULOW (div_iva_hs_clk) as DPLL_IVA bypass clock */
+	state.iva_hsd_byp_clk_mux_ck_parent = iva_hsd_byp_clk_mux_ck->parent;
+	ret = clk_set_parent(iva_hsd_byp_clk_mux_ck, div_iva_hs_clk);
+	if (ret) {
+		pr_debug("%s: failed reparenting DPLL_IVA bypass clock to CLKINPULOW\n",
+				__func__);
+		goto iva_bypass_clk_reparent_fail;
+	} else
+		pr_debug("%s: reparented DPLL_IVA bypass clock to CLKINPULOW\n",
+				__func__);
+
+	/* bypass DPLL_MPU */
+	state.dpll_mpu_ck_rate = dpll_mpu_ck->rate;
+	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck,
+			dpll_mpu_ck->dpll_data->clk_bypass->rate);
+	if (ret) {
+		pr_debug("%s: DPLL_MPU failed to enter Low Power bypass\n",
+				__func__);
+		goto dpll_mpu_bypass_fail;
+	} else
+		pr_debug("%s: DPLL_MPU entered Low Power bypass\n", __func__);
+
+	/* bypass DPLL_IVA */
+	state.dpll_iva_ck_rate = dpll_iva_ck->rate;
+	ret = omap3_noncore_dpll_set_rate(dpll_iva_ck,
+			dpll_iva_ck->dpll_data->clk_bypass->rate);
+	if (ret) {
+		pr_debug("%s: DPLL_IVA failed to enter Low Power bypass\n",
+				__func__);
+		goto dpll_iva_bypass_fail;
+	} else
+		pr_debug("%s: DPLL_IVA entered Low Power bypass\n", __func__);
 
 	/*
 	 * use ABE_LP_CLK to drive L4WKUP_ICLK and use 32K_FCLK to drive
