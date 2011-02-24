@@ -565,6 +565,9 @@ int omap4_dpll_low_power_cascade_enter()
 		goto out;
 	}
 
+	/* prevent DPLL_ABE from idling */
+	omap3_dpll_deny_idle(dpll_abe_ck);
+
 	/* prevent ABE clock domain from idling */
 	omap2_clkdm_deny_idle(abe_44xx_clkdm);
 
@@ -895,6 +898,9 @@ int omap4_dpll_low_power_cascade_exit()
 
 	/* allow ABE clock domain to idle again */
 	omap2_clkdm_allow_idle(abe_44xx_clkdm);
+
+	/* allow DPLL_ABE to idle again */
+	omap3_dpll_allow_idle(dpll_abe_ck);
 
 	/* DPLLs are configured, so let SYSCK idle again */
 
