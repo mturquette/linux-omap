@@ -704,7 +704,7 @@ static void __init prcm_setup_regs(void)
 		OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_LDO_SRAM_IVA_SETUP_OFFSET);
 
 	/* Toggle CLKREQ in RET and OFF states */
-	prm_write_mod_reg(0x2, OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_CLKREQCTRL_OFFSET);
+	prm_write_mod_reg(0x4, OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_CLKREQCTRL_OFFSET);
 
 	/*
 	 * De-assert PWRREQ signal in Device OFF state
