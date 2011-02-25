@@ -718,7 +718,7 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* never de-assert CLKREQ while in DPLL cascading scheme */
 	state.clkreqctrl = __raw_readl(OMAP4430_PRM_CLKREQCTRL);
-	__raw_writel(0x0, OMAP4430_PRM_CLKREQCTRL);
+	__raw_writel(0x4, OMAP4430_PRM_CLKREQCTRL);
 
 	/* drive PM debug clocks from CORE_M6X2 and allow the clkdm to idle */
 	/*state.pmd_stm_clock_mux_ck_parent = pmd_stm_clock_mux_ck->parent;
