@@ -714,18 +714,7 @@ int omap4_dpll_low_power_cascade_enter()
 				func_48m_fclk->clksel_mask);
 	clk_set_rate(func_48m_fclk, (func_48m_fclk->parent->rate / 4));
 
-	/*
-	 * use ABE_LP_CLK to drive L4WKUP_ICLK and use 32K_FCLK to drive
-	 * ABE_DPLL_BYPASS_CLK
-	 */
-	state.l4_wkup_clk_mux_ck_parent = l4_wkup_clk_mux_ck->parent;
-	ret = clk_set_parent(l4_wkup_clk_mux_ck, lp_clk_div_ck);
-	if (ret)
-		pr_err("%s: failed reparenting L4WKUP_ICLK to ABE LP clock\n",
-				__func__);
-	else
-		pr_debug("%s: reparented L4WKUP_ICLK to ABE LP clock\n",
-				__func__);
+	__raw_writel(1, OMAP4430_CM_ABE_PLL_REF_CLKSEL);
 
 	/* never de-assert CLKREQ while in DPLL cascading scheme */
 	state.clkreqctrl = __raw_readl(OMAP4430_PRM_CLKREQCTRL);
