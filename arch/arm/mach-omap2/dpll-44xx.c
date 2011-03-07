@@ -582,6 +582,10 @@ int omap4_dpll_low_power_cascade_enter()
 	/* put ABE clock domain SW_WKUP */
 	omap2_clkdm_wakeup(abe_44xx_clkdm);
 
+	/* WA: prevent DPLL_ABE_M3X2 clock from auto-gating */
+	omap4_prm_rmw_reg_bits(BIT(8), BIT(8),
+			dpll_abe_m3x2_ck->clksel_reg);
+
 	/* drive DPLL_CORE bypass clock from DPLL_ABE (CLKINPULOW) */
 	state.core_hsd_byp_clk_mux_ck_parent = core_hsd_byp_clk_mux_ck->parent;
 	ret = clk_set_parent(core_hsd_byp_clk_mux_ck, dpll_abe_m3x2_ck);
@@ -757,7 +761,6 @@ dpll_mpu_bypass_fail:
 iva_bypass_clk_reparent_fail:
 	clk_set_parent(iva_hsd_byp_clk_mux_ck,
 			state.iva_hsd_byp_clk_mux_ck_parent);
-	omap2_clkdm_allow_idle(abe_44xx_clkdm);
 core_clock_set_rate_fail:
 	/* FIXME make this follow the sequence below */
 	clk_set_rate(dpll_core_m5x2_ck, (dpll_core_m5x2_ck->parent->rate /
@@ -769,6 +772,11 @@ core_clock_set_rate_fail:
 core_bypass_clock_reparent_fail:
 	clk_set_parent(iva_hsd_byp_clk_mux_ck,
 			state.iva_hsd_byp_clk_mux_ck_parent);
+	omap4_prm_rmw_reg_bits(BIT(8), BIT(8),
+			dpll_abe_m3x2_ck->clksel_reg);
+	omap2_clkdm_allow_idle(abe_44xx_clkdm);
+	omap3_dpll_allow_idle(dpll_abe_ck);
+	omap3_dpll_allow_idle(dpll_core_ck);
 out:
 	return ret;
 }
@@ -895,6 +903,10 @@ int omap4_dpll_low_power_cascade_exit()
 	if (ret)
 		pr_err("%s: failed restoring DPLL_CORE bypass clock parent\n",
 				__func__);
+
+	/* WA: allow DPLL_ABE_M3X2 clock to auto-gate */
+	omap4_prm_rmw_reg_bits(BIT(8), 0x0,
+			dpll_abe_m3x2_ck->clksel_reg);
 
 	/* allow ABE clock domain to idle again */
 	omap2_clkdm_allow_idle(abe_44xx_clkdm);
