@@ -718,7 +718,7 @@ int omap4_dpll_low_power_cascade_enter()
 				func_48m_fclk->clksel_mask);
 	clk_set_rate(func_48m_fclk, (func_48m_fclk->parent->rate / 4));
 
-	__raw_writel(1, OMAP4430_CM_ABE_PLL_REF_CLKSEL);
+	__raw_writel(1, OMAP4430_CM_L4_WKUP_CLKSEL);
 
 	/* never de-assert CLKREQ while in DPLL cascading scheme */
 	state.clkreqctrl = __raw_readl(OMAP4430_PRM_CLKREQCTRL);
@@ -917,11 +917,8 @@ int omap4_dpll_low_power_cascade_exit()
 
 	/* DPLLs are configured, so let SYSCK idle again */
 
-	/* restore parent to drive L4WKUP_ICLK and ABE_DPLL_BYPASS_CLK */
-	ret = clk_set_parent(l4_wkup_clk_mux_ck, state.l4_wkup_clk_mux_ck_parent);
-	if (ret)
-		pr_debug("%s: failed restoring L4WKUP_ICLK parent clock\n",
-				__func__);
+	__raw_writel(0, OMAP4430_CM_L4_WKUP_CLKSEL);
+
 
 	/* restore CLKREQ behavior */
 	__raw_writel(state.clkreqctrl, OMAP4430_PRM_CLKREQCTRL);
