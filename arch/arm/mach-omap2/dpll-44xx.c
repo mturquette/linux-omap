@@ -209,7 +209,7 @@ int omap4_core_dpll_set_rate(struct clk *clk, unsigned long rate)
 		shadow_freq_cfg2 =
 			(m5_div << OMAP4430_DPLL_CORE_M5_DIV_SHIFT) |
 			(1 << OMAP4430_CLKSEL_L3_SHADOW_SHIFT) |
-			(1 << OMAP4430_CLKSEL_CORE_1_1_SHIFT) |
+			(0 << OMAP4430_CLKSEL_CORE_1_1_SHIFT) |
 			(1 << OMAP4430_GPMC_FREQ_UPDATE_SHIFT);
 
 		__raw_writel(shadow_freq_cfg2, OMAP4430_CM_SHADOW_FREQ_CONFIG2);
