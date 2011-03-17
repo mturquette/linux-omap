@@ -44,10 +44,8 @@
 #include <plat/display.h>
 #include <linux/delay.h>
 #include <plat/usb.h>
-#ifdef CONFIG_SERIAL_OMAP
 #include <plat/omap-serial.h>
 #include <plat/serial.h>
-#endif
 #include <plat/omap_device.h>
 #include <plat/omap_hwmod.h>
 #include <plat/mmc.h>
@@ -864,7 +862,9 @@ static void __init omap_panda_init(void)
 	omap4_i2c_init();
 	omap4_display_init();
 	platform_add_devices(panda_devices, ARRAY_SIZE(panda_devices));
+#ifdef CONFIG_SERIAL_OMAP
 	omap_serial_init(omap_serial_platform_data);
+#endif
 	omap4_twl6030_hsmmc_init(mmc);
 
 #ifdef CONFIG_TIWLAN_SDIO

@@ -65,6 +65,10 @@ static struct dpll_cascade_saved_state {
 	unsigned int cpufreq_policy_min_rate;
 	unsigned int cpufreq_policy_max_rate;
 	unsigned int cpufreq_policy_cur_rate;
+	struct omap_opp *mpu_opp;
+	unsigned long vdd_mpu_volt;
+	unsigned long vdd_iva_volt;
+	unsigned long vdd_core_volt;
 } state;
 
 /**
@@ -533,6 +537,7 @@ int omap4_dpll_low_power_cascade_enter()
 	struct device *mpu_dev;
 	struct cpufreq_policy *cp;
 	struct omap_opp *opp;
+	struct voltagedomain *mpu_voltdm, *iva_voltdm, *core_voltdm;
 
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
 	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
@@ -561,6 +566,10 @@ int omap4_dpll_low_power_cascade_enter()
 
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
 	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
+
+	mpu_voltdm = omap_voltage_domain_get("mpu");
+	iva_voltdm = omap_voltage_domain_get("iva");
+	core_voltdm = omap_voltage_domain_get("core");
 
 	if (!dpll_abe_ck || !dpll_mpu_ck || !div_mpu_hs_clk || !dpll_iva_ck ||
 		!div_iva_hs_clk || !iva_hsd_byp_clk_mux_ck || !dpll_core_m2_ck
@@ -676,6 +685,7 @@ int omap4_dpll_low_power_cascade_enter()
 	state.cpufreq_policy_cur_rate = cp->cur;
 	state.cpufreq_policy_min_rate = cp->min;
 	state.cpufreq_policy_max_rate = cp->max;
+	state.mpu_opp = opp;
 
 	/* cpufreq takes in KHz */
 	cp->min = LP_98M_RATE / 1000;
@@ -687,6 +697,10 @@ int omap4_dpll_low_power_cascade_enter()
 		goto dpll_mpu_bypass_fail;
 	} else
 		pr_debug("%s: DPLL_MPU entered Low Power bypass\n", __func__);
+
+	/* scale VDD_MPU to 0.9V */
+	state.vdd_mpu_volt = omap_voltage_get_nom_volt(mpu_voltdm);
+	//omap_voltage_scale(mpu_voltdm, 912500);
 
 	omap4_lpmode = true;
 
@@ -700,6 +714,10 @@ int omap4_dpll_low_power_cascade_enter()
 		goto dpll_iva_bypass_fail;
 	} else
 		pr_debug("%s: DPLL_IVA entered Low Power bypass\n", __func__);
+
+	/* scale VDD_IVA to 0.9V */
+	state.vdd_iva_volt = omap_voltage_get_nom_volt(iva_voltdm);
+	//omap_voltage_scale(iva_voltdm, 912500);
 
 	/* bypass DPLL_PER */
 	state.dpll_per_ck_rate = dpll_per_ck->rate;
@@ -717,6 +735,10 @@ int omap4_dpll_low_power_cascade_enter()
 		omap4_prm_read_bits_shift(func_48m_fclk->clksel_reg,
 				func_48m_fclk->clksel_mask);
 	clk_set_rate(func_48m_fclk, (func_48m_fclk->parent->rate / 4));
+
+	/* scale VDD_CORE to 0.9V */
+	state.vdd_core_volt = omap_voltage_get_nom_volt(core_voltdm);
+	//omap_voltage_scale(core_voltdm, 912500);
 
 	__raw_writel(1, OMAP4430_CM_L4_WKUP_CLKSEL);
 
@@ -798,6 +820,7 @@ int omap4_dpll_low_power_cascade_exit()
 	struct clk *pmd_stm_clock_mux_ck, *pmd_trace_clk_mux_ck;
 	struct clockdomain *emu_sys_44xx_clkdm, *abe_44xx_clkdm;
 	struct cpufreq_policy *cp;
+	struct voltagedomain *mpu_voltdm, *iva_voltdm, *core_voltdm;
 
 	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
 	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
@@ -828,6 +851,10 @@ int omap4_dpll_low_power_cascade_exit()
 	emu_sys_44xx_clkdm = clkdm_lookup("emu_sys_44xx_clkdm");
 	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
 
+	mpu_voltdm = omap_voltage_domain_get("mpu");
+	iva_voltdm = omap_voltage_domain_get("iva");
+	core_voltdm = omap_voltage_domain_get("core");
+
 	if (!dpll_abe_ck || !dpll_mpu_ck || !div_mpu_hs_clk || !dpll_iva_ck ||
 		!div_iva_hs_clk || !iva_hsd_byp_clk_mux_ck || !dpll_core_m2_ck
 		|| !dpll_abe_m3x2_ck || !div_core_ck || !dpll_core_x2_ck ||
@@ -842,6 +869,11 @@ int omap4_dpll_low_power_cascade_exit()
 		goto out;
 	}
 
+	/* scale voltages up before increasing clock frequencies */
+	/*omap_voltage_scale(core_voltdm, state.vdd_core_volt);
+	omap_voltage_scale(mpu_voltdm, state.vdd_mpu_volt);
+	omap_voltage_scale(iva_voltdm, state.vdd_iva_volt);*/
+
 	omap4_lpmode = false;
 
 	cp = cpufreq_cpu_get(0);
@@ -849,6 +881,7 @@ int omap4_dpll_low_power_cascade_exit()
 	cp->max = state.cpufreq_policy_max_rate;
 	cpufreq_driver_target(cp, state.cpufreq_policy_cur_rate,
 			CPUFREQ_RELATION_H);
+	opp_disable(state.mpu_opp);
 
 	/* lock DPLL_IVA */
 	ret = omap3_noncore_dpll_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);

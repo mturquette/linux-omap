@@ -367,7 +367,9 @@ void __init omap2_init_common_hw(struct omap_sdrc_params *sdrc_cs0,
 	else
 		pr_err("Could not init clock framework - unknown CPU\n");
 
+#ifdef CONFIG_SERIAL_OMAP
 	omap_serial_early_init();
+#endif
 #ifndef CONFIG_PM_RUNTIME
     skip_setup_idle = 1;
 #endif

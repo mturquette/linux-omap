@@ -110,8 +110,10 @@ u32 omap4_device_off_read_next_state(void)
 
 int omap4_can_sleep(void)
 {
+#ifdef CONFIG_SERIAL_OMAP
 	if (!omap_uart_can_sleep())
 		return 0;
+#endif
 	return 1;
 }
 
@@ -232,10 +234,13 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 		omap_smartreflex_disable(vdd_iva);
 		omap_smartreflex_disable(vdd_core);
 
+		omap_hsi_prepare_idle();
+#ifdef CONFIG_SERIAL_OMAP
 		omap_uart_prepare_idle(0);
 		omap_uart_prepare_idle(1);
 		omap_uart_prepare_idle(2);
 		omap_uart_prepare_idle(3);
+#endif
 
 		if (omap4_device_off_read_next_state()) {
 			omap2_gpio_prepare_for_idle(1);
@@ -322,10 +327,12 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 				OMAP4430_PRM_DEVICE_MOD,
 				OMAP4_PRM_IO_PMCTRL_OFFSET);
 
+#ifdef CONFIG_SERIAL_OMAP
 		omap_uart_resume_idle(0);
 		omap_uart_resume_idle(1);
 		omap_uart_resume_idle(2);
 		omap_uart_resume_idle(3);
+#endif
 		omap_hsi_resume_idle();
 
 		/* Enable SR for IVA and CORE */
@@ -453,7 +460,9 @@ static int omap4_pm_suspend(void)
 	cpu1_state = pwrdm_read_pwrst(cpu1_pwrdm);
 	if (cpu1_state != PWRDM_POWER_OFF)
 		goto restore;
+#ifdef CONFIG_SERIAL_OMAP
 	omap_uart_prepare_suspend();
+#endif
 	omap_hsi_prepare_suspend();
 
 	/* Enable Device OFF */

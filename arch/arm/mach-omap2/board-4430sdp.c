@@ -49,10 +49,8 @@
 #include <plat/usb.h>
 #include <plat/omap_device.h>
 #include <plat/omap_hwmod.h>
-#ifdef CONFIG_SERIAL_OMAP
 #include <plat/omap-serial.h>
 #include <plat/serial.h>
-#endif
 #include <linux/wakelock.h>
 #include <plat/opp_twl_tps.h>
 #include <plat/mmc.h>
@@ -1709,7 +1707,9 @@ static void __init omap_4430sdp_init(void)
 	platform_add_devices(sdp4430_devices, ARRAY_SIZE(sdp4430_devices));
 
 	wake_lock_init(&uart_lock, WAKE_LOCK_SUSPEND, "uart_wake_lock");
+#ifdef CONFIG_SERIAL_OMAP
 	omap_serial_init(omap_serial_platform_data);
+#endif
 	omap4_twl6030_hsmmc_init(mmc);
 
 #ifdef CONFIG_TIWLAN_SDIO
