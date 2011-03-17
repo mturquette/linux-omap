@@ -31,7 +31,7 @@ static int cdc_tcxo_probe(struct i2c_client *client, \
 	 * Please refer to the TCXO Data sheet for understanding the
 	 * programming sequence further.
 	 */
-	u8 buf[4] = {0x9f, 0xf0, 0, 0};
+	u8 buf[4] = {0x9f, 0xf0, 0x20, 0};
 
 	msg.addr = client->addr;
 	msg.flags = 0;
