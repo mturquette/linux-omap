@@ -27,15 +27,24 @@
 #include <plat/opp.h>
 #include <plat/clock.h>
 #include <plat/omap_device.h>
+#include <plat/clockdomain.h>
+#include <plat/prcm.h>
 
 #include "cm-regbits-34xx.h"
 #include "prm.h"
 #include "opp44xx.h"
+#include "clock.h"
 
-static struct clk *dpll_mpu_ck, *dpll_iva_m5x2_ck, *dpll_iva_m4x2_ck, *dpll_core_m5x2_ck, *dpll_core_m2_ck;
+static struct clk *sys_clkin_ck;
+static struct clk *dpll_mpu_ck;
+static struct clk *dpll_iva_m5x2_ck, *dpll_iva_m4x2_ck;
+static struct clk *dpll_core_ck, *dpll_core_m5x2_ck, *dpll_core_m2_ck;
 static struct clk *dpll_core_m3x2_ck, *dpll_core_m6x2_ck, *dpll_core_m7x2_ck;
-static struct clk *dpll_per_m3x2_ck, *dpll_per_m6x2_ck;
-static struct clk *abe_clk, *dpll_per_m7x2_ck, *fdif_fck, *hsi_fck;
+static struct clk *core_hsd_byp_clk_mux_ck;
+static struct clk *dpll_per_m3x2_ck, *dpll_per_m6x2_ck, *dpll_per_m7x2_ck;
+static struct clk *dpll_abe_ck, *dpll_abe_m3x2_ck, *abe_clk;
+static struct clk *fdif_fck, *hsi_fck;
+static struct clockdomain *abe_44xx_clkdm;
 
 /*
  * Separate OPP table is needed for pre ES2.1 chips as emif cannot be scaled.
@@ -175,15 +184,33 @@ static struct omap_opp_def __initdata omap44xx_opp_def_list[] = {
 	OMAP_OPP_DEF("hsi", true, 96000000, 1200000),
 };
 
-#define	L3_OPP50_RATE			100000000
+#define L3_OPP50_98_RATE		 98304000
+#define L3_OPP50_RATE			100000000
+
+#define DPLL_CORE_OPP50_98_RATE		196608000
+#define DPLL_CORE_OPP50_100_RATE       1600000000
+
+#define DPLL_CORE_M3_OPP50_98_RATE	196608000
 #define DPLL_CORE_M3_OPP50_RATE		200000000
 #define DPLL_CORE_M3_OPP100_RATE	320000000
+
+/* used for pmd_stm_clock_mux_sel & dbgclk_mux_sel */
+#define DPLL_CORE_M6_OPP50_98_RATE	196608000
 #define DPLL_CORE_M6_OPP50_RATE		200000000
 #define DPLL_CORE_M6_OPP100_RATE	266600000
+
+/* option for sgx_clk_mux_sel (I think PER is used in practice) */
+#define DPLL_CORE_M7_OPP50_98_RATE	196608000
 #define DPLL_CORE_M7_OPP50_RATE		133333333
 #define DPLL_CORE_M7_OPP100_RATE	266666666
+
+/* only used by auxclk_src_sel */
+#define DPLL_PER_M3_OPP50_98_RATE	 98304000
 #define DPLL_PER_M3_OPP50_RATE		192000000
 #define DPLL_PER_M3_OPP100_RATE		256000000
+
+/* ducati_clk_mux_sel, I think default is div_core_ck */
+#define DPLL_PER_M6_OPP50_98_RATE	 98304000
 #define DPLL_PER_M6_OPP50_RATE		192000000
 #define DPLL_PER_M6_OPP100_RATE		384000000
 
@@ -263,37 +290,97 @@ static unsigned long omap4_iva_get_rate(struct device *dev)
 	}
 }
 
+static unsigned long omap4_l3_get_rate(struct device *dev)
+{
+	return dpll_core_m5x2_ck->rate / 2;
+}
+
 static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 {
+	int ret;
 	u32 dpll_core_m3x2_rate, dpll_core_m6x2_rate, dpll_core_m7x2_rate;
 	u32 dpll_per_m3x2_rate, dpll_per_m6x2_rate;
 
-	if (rate <= L3_OPP50_RATE) {
-		dpll_core_m3x2_rate = DPLL_CORE_M3_OPP50_RATE;
-		dpll_core_m6x2_rate = DPLL_CORE_M6_OPP50_RATE;
-		dpll_core_m7x2_rate = DPLL_CORE_M7_OPP50_RATE;
-		dpll_per_m3x2_rate = DPLL_PER_M3_OPP50_RATE;
-		dpll_per_m6x2_rate = DPLL_PER_M6_OPP50_RATE;
+	/* OPP50_98 is special since it corresponds to DPLL cascading */
+	if (rate <= L3_OPP50_98_RATE) {
+		dpll_core_m3x2_rate = DPLL_CORE_M3_OPP50_98_RATE;
+		dpll_core_m6x2_rate = DPLL_CORE_M6_OPP50_98_RATE;
+		dpll_core_m7x2_rate = DPLL_CORE_M7_OPP50_98_RATE;
+		dpll_per_m3x2_rate = DPLL_PER_M3_OPP50_98_RATE;
+		dpll_per_m6x2_rate = DPLL_PER_M6_OPP50_98_RATE;
+
+		/* configure for DPLL cascading if necessary */
+		if (omap4_l3_get_rate(dev) >= L3_OPP50_RATE) {
+			/* prevent DPLL_ABE & DPLL_CORE from idling */
+			omap3_dpll_deny_idle(dpll_abe_ck);
+			omap3_dpll_deny_idle(dpll_core_ck);
+
+			/* put ABE clock domain SW_WKUP */
+			omap2_clkdm_wakeup(abe_44xx_clkdm);
+
+			/* WA: prevent DPLL_ABE_M3X2 clock from auto-gating */
+			omap4_prm_rmw_reg_bits(BIT(8), BIT(8),
+					dpll_abe_m3x2_ck->clksel_reg);
+
+			ret = clk_set_parent(core_hsd_byp_clk_mux_ck,
+					dpll_abe_m3x2_ck);
+			if (ret) {
+				pr_err("%s: failed reparenting DPLL_CORE\n",
+						__func__);
+				return -ENODEV;
+			} else
+				pr_err("%s: reparented DPLL_CORE\n",
+						__func__);
+
+			clk_set_rate(dpll_core_ck, DPLL_CORE_OPP50_98_RATE);
+		}
+	/* all other OPPs use the system clock to feed DPLL_CORE */
 	} else {
-		dpll_core_m3x2_rate = DPLL_CORE_M3_OPP100_RATE;
-		dpll_core_m6x2_rate = DPLL_CORE_M6_OPP100_RATE;
-		dpll_core_m7x2_rate = DPLL_CORE_M7_OPP100_RATE;
-		dpll_per_m3x2_rate = DPLL_PER_M3_OPP100_RATE;
-		dpll_per_m6x2_rate = DPLL_PER_M6_OPP100_RATE;
+		if (rate == L3_OPP50_RATE) {
+			dpll_core_m3x2_rate = DPLL_CORE_M3_OPP50_RATE;
+			dpll_core_m6x2_rate = DPLL_CORE_M6_OPP50_RATE;
+			dpll_core_m7x2_rate = DPLL_CORE_M7_OPP50_RATE;
+			dpll_per_m3x2_rate = DPLL_PER_M3_OPP50_RATE;
+			dpll_per_m6x2_rate = DPLL_PER_M6_OPP50_RATE;
+		} else {
+			dpll_core_m3x2_rate = DPLL_CORE_M3_OPP100_RATE;
+			dpll_core_m6x2_rate = DPLL_CORE_M6_OPP100_RATE;
+			dpll_core_m7x2_rate = DPLL_CORE_M7_OPP100_RATE;
+			dpll_per_m3x2_rate = DPLL_PER_M3_OPP100_RATE;
+			dpll_per_m6x2_rate = DPLL_PER_M6_OPP100_RATE;
+		}
+
+		/* undo DPLL cascading configuration if necessary */
+		if (omap4_l3_get_rate(dev) <= L3_OPP50_98_RATE) {
+			clk_set_rate(dpll_core_ck, DPLL_CORE_OPP50_100_RATE);
+
+			/* drive DPLL_CORE bypass clock from SYS_CK (CLKINP) */
+			ret = clk_set_parent(core_hsd_byp_clk_mux_ck, sys_clkin_ck);
+			if (ret)
+				pr_err("%s: failed reparenting DPLL_CORE\n",
+						__func__);
+
+			/* WA: allow DPLL_ABE_M3X2 clock to auto-gate */
+			omap4_prm_rmw_reg_bits(BIT(8), 0x0,
+					dpll_abe_m3x2_ck->clksel_reg);
+
+			/* allow ABE clock domain to idle again */
+			omap2_clkdm_allow_idle(abe_44xx_clkdm);
+
+			/* allow DPLL_ABE & DPLL_CORE to idle again */
+			omap3_dpll_allow_idle(dpll_core_ck);
+			omap3_dpll_allow_idle(dpll_abe_ck);
+		}
 	}
 
 	clk_set_rate(dpll_core_m3x2_ck, dpll_core_m3x2_rate);
-	dpll_core_m6x2_rate = clk_round_rate(dpll_core_m6x2_ck, dpll_core_m6x2_rate);
+	dpll_core_m6x2_rate = clk_round_rate(dpll_core_m6x2_ck,
+			dpll_core_m6x2_rate);
 	clk_set_rate(dpll_core_m6x2_ck, dpll_core_m6x2_rate);
 	clk_set_rate(dpll_core_m7x2_ck, dpll_core_m7x2_rate);
 	clk_set_rate(dpll_per_m3x2_ck, dpll_per_m3x2_rate);
 	clk_set_rate(dpll_per_m6x2_ck, dpll_per_m6x2_rate);
 	return clk_set_rate(dpll_core_m5x2_ck, rate * 2);
-}
-
-static unsigned long omap4_l3_get_rate(struct device *dev)
-{
-	return dpll_core_m5x2_ck->rate / 2;
 }
 
 static int omap4_emif_set_rate(struct device *dev, unsigned long rate)
@@ -395,21 +482,28 @@ int __init omap4_pm_init_opp_table(void)
 		opp_def++;
 	}
 
+	sys_clkin_ck = clk_get(NULL, "sys_clkin_ck");
 	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
 	dpll_iva_m5x2_ck = clk_get(NULL, "dpll_iva_m5x2_ck");
 	dpll_iva_m4x2_ck = clk_get(NULL, "dpll_iva_m4x2_ck");
+	dpll_core_ck = clk_get(NULL, "dpll_core_ck");
 	dpll_core_m5x2_ck = clk_get(NULL, "dpll_core_m5x2_ck");
 	dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
 	dpll_core_m3x2_ck = clk_get(NULL, "dpll_core_m3x2_ck");
 	dpll_core_m6x2_ck = clk_get(NULL, "dpll_core_m6x2_ck");
 	dpll_core_m7x2_ck = clk_get(NULL, "dpll_core_m7x2_ck");
+	core_hsd_byp_clk_mux_ck = clk_get(NULL, "core_hsd_byp_clk_mux_ck");
 	dpll_per_m7x2_ck = clk_get(NULL, "dpll_per_m7x2_ck");
+	dpll_abe_ck = clk_get(NULL, "dpll_abe_ck");
+	dpll_abe_m3x2_ck = clk_get(NULL, "dpll_abe_m3x2_ck");
 	gpu_fck = clk_get(NULL, "gpu_fck");
 	dpll_per_m3x2_ck = clk_get(NULL, "dpll_per_m3x2_ck");
 	dpll_per_m6x2_ck = clk_get(NULL, "dpll_per_m6x2_ck");
 	abe_clk = clk_get(NULL, "abe_clk");
 	fdif_fck = clk_get(NULL, "fdif_fck");
 	hsi_fck = clk_get(NULL, "hsi_fck");
+
+	abe_44xx_clkdm = clkdm_lookup("abe_clkdm");
 
 	/* Set SGX parent to PER DPLL */
 	clk_set_parent(gpu_fck, dpll_per_m7x2_ck);
