@@ -268,7 +268,37 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 	u32 d_core_m3_rate, d_core_m6_rate, d_core_m7_rate;
 	u32 d_per_m3_rate, d_per_m6_rate;
 
-	if (rate <= L3_OPP50_RATE) {
+	if (rate <= L3_OPP50_98_RATE) {
+		/* prevent DPLL_ABE & DPLL_CORE from idling */
+		omap3_dpll_deny_idle(dpll_abe_ck);
+		omap3_dpll_deny_idle(dpll_core_ck);
+
+		/* put ABE clock domain SW_WKUP */
+		omap2_clkdm_wakeup(abe_44xx_clkdm);
+
+		/* WA: prevent DPLL_ABE_M3X2 clock from auto-gating */
+		omap4_prm_rmw_reg_bits(BIT(8), BIT(8),
+				dpll_abe_m3x2_ck->clksel_reg);
+
+		ret = clk_set_parent(core_hsd_byp_clk_mux_ck, dpll_abe_m3x2_ck);
+		if (ret) {
+			pr_err("%s: failed reparenting DPLL_CORE bypass clock to ABE_M3X2\n",
+					__func__);
+			return -ENODEV;
+		} else
+			pr_err("%s: DPLL_CORE bypass clock reparented to ABE_M3X2\n",
+					__func__);
+
+		ret = clk_set_rate(dpll_core_ck, LP_196M_RATE);
+		ret |= clk_set_rate(dpll_core_m5x2_ck, LP_196M_RATE);
+		ret |=  clk_set_rate(div_core_ck, LP_196M_RATE);
+		if (ret) {
+			pr_err("%s: failed setting CORE clock rates\n", __func__);
+			return -ENODEV;
+		} else
+			pr_err("%s: DPLL_CORE bypass clock reparented to ABE_M3X2\n",
+					__func__);
+	} else if (rate == L3_OPP50_RATE) {
 		d_core_m3_rate = DPLL_CORE_M3_OPP50_RATE;
 		d_core_m6_rate = DPLL_CORE_M6_OPP50_RATE;
 		d_core_m7_rate = DPLL_CORE_M7_OPP50_RATE;
