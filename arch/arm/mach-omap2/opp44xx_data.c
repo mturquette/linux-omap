@@ -265,29 +265,29 @@ static unsigned long omap4_iva_get_rate(struct device *dev)
 
 static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 {
-	u32 d_core_m3_rate, d_core_m6_rate, d_core_m7_rate;
-	u32 d_per_m3_rate, d_per_m6_rate;
+	u32 dpll_core_m3x2_rate, dpll_core_m6x2_rate, dpll_core_m7x2_rate;
+	u32 dpll_per_m3x2_rate, dpll_per_m6x2_rate;
 
 	if (rate <= L3_OPP50_RATE) {
-		d_core_m3_rate = DPLL_CORE_M3_OPP50_RATE;
-		d_core_m6_rate = DPLL_CORE_M6_OPP50_RATE;
-		d_core_m7_rate = DPLL_CORE_M7_OPP50_RATE;
-		d_per_m3_rate = DPLL_PER_M3_OPP50_RATE;
-		d_per_m6_rate = DPLL_PER_M6_OPP50_RATE;
+		dpll_core_m3x2_rate = DPLL_CORE_M3_OPP50_RATE;
+		dpll_core_m6x2_rate = DPLL_CORE_M6_OPP50_RATE;
+		dpll_core_m7x2_rate = DPLL_CORE_M7_OPP50_RATE;
+		dpll_per_m3x2_rate = DPLL_PER_M3_OPP50_RATE;
+		dpll_per_m6x2_rate = DPLL_PER_M6_OPP50_RATE;
 	} else {
-		d_core_m3_rate = DPLL_CORE_M3_OPP100_RATE;
-		d_core_m6_rate = DPLL_CORE_M6_OPP100_RATE;
-		d_core_m7_rate = DPLL_CORE_M7_OPP100_RATE;
-		d_per_m3_rate = DPLL_PER_M3_OPP100_RATE;
-		d_per_m6_rate = DPLL_PER_M6_OPP100_RATE;
+		dpll_core_m3x2_rate = DPLL_CORE_M3_OPP100_RATE;
+		dpll_core_m6x2_rate = DPLL_CORE_M6_OPP100_RATE;
+		dpll_core_m7x2_rate = DPLL_CORE_M7_OPP100_RATE;
+		dpll_per_m3x2_rate = DPLL_PER_M3_OPP100_RATE;
+		dpll_per_m6x2_rate = DPLL_PER_M6_OPP100_RATE;
 	}
 
-	clk_set_rate(dpll_core_m3x2_ck, d_core_m3_rate);
-	d_core_m6_rate = clk_round_rate(dpll_core_m6x2_ck, d_core_m6_rate);
-	clk_set_rate(dpll_core_m6x2_ck, d_core_m6_rate);
-	clk_set_rate(dpll_core_m7x2_ck, d_core_m7_rate);
-	clk_set_rate(dpll_per_m3x2_ck, d_per_m3_rate);
-	clk_set_rate(dpll_per_m6x2_ck, d_per_m6_rate);
+	clk_set_rate(dpll_core_m3x2_ck, dpll_core_m3x2_rate);
+	dpll_core_m6x2_rate = clk_round_rate(dpll_core_m6x2_ck, dpll_core_m6x2_rate);
+	clk_set_rate(dpll_core_m6x2_ck, dpll_core_m6x2_rate);
+	clk_set_rate(dpll_core_m7x2_ck, dpll_core_m7x2_rate);
+	clk_set_rate(dpll_per_m3x2_ck, dpll_per_m3x2_rate);
+	clk_set_rate(dpll_per_m6x2_ck, dpll_per_m6x2_rate);
 	return clk_set_rate(dpll_core_m5x2_ck, rate * 2);
 }
 
