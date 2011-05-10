@@ -32,10 +32,10 @@
 #include "prm.h"
 #include "opp44xx.h"
 
-static struct clk *dpll_mpu_clk, *iva_clk, *dsp_clk, *l3_clk, *core_m2_clk;
-static struct clk *core_m3_clk, *core_m6_clk, *core_m7_clk;
-static struct clk *per_m3_clk, *per_m6_clk;
-static struct clk *abe_clk, *sgx_clk, *fdif_clk, *hsi_clk;
+static struct clk *dpll_mpu_ck, *dpll_iva_m5x2_ck, *dpll_iva_m4x2_ck, *dpll_core_m5x2_ck, *dpll_core_m2_ck;
+static struct clk *dpll_core_m3x2_ck, *dpll_core_m6x2_ck, *dpll_core_m7x2_ck;
+static struct clk *dpll_per_m3x2_ck, *dpll_per_m6x2_ck;
+static struct clk *abe_clk, *dpll_per_m7x2_ck, *fdif_fck, *hsi_fck;
 
 /*
  * Separate OPP table is needed for pre ES2.1 chips as emif cannot be scaled.
@@ -217,7 +217,7 @@ static int omap4_mpu_set_rate(struct device *dev, unsigned long rate)
 {
 	int ret;
 
-	ret = clk_set_rate(dpll_mpu_clk, rate);
+	ret = clk_set_rate(dpll_mpu_ck, rate);
 	if (ret) {
 		dev_warn(dev, "%s: Unable to set rate to %ld\n",
 			__func__, rate);
@@ -229,7 +229,7 @@ static int omap4_mpu_set_rate(struct device *dev, unsigned long rate)
 
 static unsigned long omap4_mpu_get_rate(struct device *dev)
 {
-	return dpll_mpu_clk->rate;
+	return dpll_mpu_ck->rate;
 }
 
 static int omap4_iva_set_rate(struct device *dev, unsigned long rate)
@@ -240,10 +240,10 @@ static int omap4_iva_set_rate(struct device *dev, unsigned long rate)
 		 * Round rate is required as the actual iva clock rate is
 		 * weird for OMAP4
 		 */
-		round_rate = clk_round_rate(iva_clk, rate);
-		return clk_set_rate(iva_clk, round_rate);
+		round_rate = clk_round_rate(dpll_iva_m5x2_ck, rate);
+		return clk_set_rate(dpll_iva_m5x2_ck, round_rate);
 	} else if (dev == omap4_get_dsp_device()) {
-		return clk_set_rate(dsp_clk, rate);
+		return clk_set_rate(dpll_iva_m4x2_ck, rate);
 	} else {
 		dev_warn(dev, "%s: Wrong device pointer\n", __func__);
 		return -EINVAL;
@@ -254,9 +254,9 @@ static int omap4_iva_set_rate(struct device *dev, unsigned long rate)
 static unsigned long omap4_iva_get_rate(struct device *dev)
 {
 	if (dev == omap2_get_iva_device()) {
-		return iva_clk->rate ;
+		return dpll_iva_m5x2_ck->rate ;
 	} else if (dev == omap4_get_dsp_device()) {
-		return dsp_clk->rate ;
+		return dpll_iva_m4x2_ck->rate ;
 	} else {
 		dev_warn(dev, "%s: Wrong device pointer\n", __func__);
 		return -EINVAL;
@@ -282,28 +282,28 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 		d_per_m6_rate = DPLL_PER_M6_OPP100_RATE;
 	}
 
-	clk_set_rate(core_m3_clk, d_core_m3_rate);
-	d_core_m6_rate = clk_round_rate(core_m6_clk, d_core_m6_rate);
-	clk_set_rate(core_m6_clk, d_core_m6_rate);
-	clk_set_rate(core_m7_clk, d_core_m7_rate);
-	clk_set_rate(per_m3_clk, d_per_m3_rate);
-	clk_set_rate(per_m6_clk, d_per_m6_rate);
-	return clk_set_rate(l3_clk, rate * 2);
+	clk_set_rate(dpll_core_m3x2_ck, d_core_m3_rate);
+	d_core_m6_rate = clk_round_rate(dpll_core_m6x2_ck, d_core_m6_rate);
+	clk_set_rate(dpll_core_m6x2_ck, d_core_m6_rate);
+	clk_set_rate(dpll_core_m7x2_ck, d_core_m7_rate);
+	clk_set_rate(dpll_per_m3x2_ck, d_per_m3_rate);
+	clk_set_rate(dpll_per_m6x2_ck, d_per_m6_rate);
+	return clk_set_rate(dpll_core_m5x2_ck, rate * 2);
 }
 
 static unsigned long omap4_l3_get_rate(struct device *dev)
 {
-	return l3_clk->rate / 2;
+	return dpll_core_m5x2_ck->rate / 2;
 }
 
 static int omap4_emif_set_rate(struct device *dev, unsigned long rate)
 {
-	return clk_set_rate(core_m2_clk, rate);
+	return clk_set_rate(dpll_core_m2_ck, rate);
 }
 
 static unsigned long omap4_emif_get_rate(struct device *dev)
 {
-	return core_m2_clk->rate;
+	return dpll_core_m2_ck->rate;
 }
 
 static int omap4_abe_set_rate(struct device *dev, unsigned long rate)
@@ -322,32 +322,32 @@ static unsigned long omap4_abe_get_rate(struct device *dev)
 
 static int omap4_sgx_set_rate(struct device *dev, unsigned long rate)
 {
-	return clk_set_rate(sgx_clk, rate);
+	return clk_set_rate(dpll_per_m7x2_ck, rate);
 }
 
 static unsigned long omap4_sgx_get_rate(struct device *dev)
 {
-	return sgx_clk->rate ;
+	return dpll_per_m7x2_ck->rate ;
 }
 
 static int omap4_fdif_set_rate(struct device *dev, unsigned long rate)
 {
-	return clk_set_rate(fdif_clk, rate);
+	return clk_set_rate(fdif_fck, rate);
 }
 
 static unsigned long omap4_fdif_get_rate(struct device *dev)
 {
-	return fdif_clk->rate ;
+	return fdif_fck->rate ;
 }
 
 static int omap4_hsi_set_rate(struct device *dev, unsigned long rate)
 {
-	return clk_set_rate(hsi_clk, rate);
+	return clk_set_rate(hsi_fck, rate);
 }
 
 static unsigned long omap4_hsi_get_rate(struct device *dev)
 {
-	return hsi_clk->rate ;
+	return hsi_fck->rate ;
 }
 
 struct device *find_dev_ptr(char *name)
@@ -371,7 +371,7 @@ int __init omap4_pm_init_opp_table(void)
 {
 	struct omap_opp_def *opp_def;
 	struct device *dev;
-	struct clk *gpu_fclk;
+	struct clk *gpu_fck;
 	int i, r;
 
 	/*
@@ -395,25 +395,25 @@ int __init omap4_pm_init_opp_table(void)
 		opp_def++;
 	}
 
-	dpll_mpu_clk = clk_get(NULL, "dpll_mpu_ck");
-	iva_clk = clk_get(NULL, "dpll_iva_m5x2_ck");
-	dsp_clk = clk_get(NULL, "dpll_iva_m4x2_ck");
-	l3_clk = clk_get(NULL, "dpll_core_m5x2_ck");
-	core_m2_clk = clk_get(NULL, "dpll_core_m2_ck");
-	core_m3_clk = clk_get(NULL, "dpll_core_m3x2_ck");
-	core_m6_clk = clk_get(NULL, "dpll_core_m6x2_ck");
-	core_m7_clk = clk_get(NULL, "dpll_core_m7x2_ck");
-	sgx_clk = clk_get(NULL, "dpll_per_m7x2_ck");
-	gpu_fclk = clk_get(NULL, "gpu_fck");
-	per_m3_clk = clk_get(NULL, "dpll_per_m3x2_ck");
-	per_m6_clk = clk_get(NULL, "dpll_per_m6x2_ck");
+	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
+	dpll_iva_m5x2_ck = clk_get(NULL, "dpll_iva_m5x2_ck");
+	dpll_iva_m4x2_ck = clk_get(NULL, "dpll_iva_m4x2_ck");
+	dpll_core_m5x2_ck = clk_get(NULL, "dpll_core_m5x2_ck");
+	dpll_core_m2_ck = clk_get(NULL, "dpll_core_m2_ck");
+	dpll_core_m3x2_ck = clk_get(NULL, "dpll_core_m3x2_ck");
+	dpll_core_m6x2_ck = clk_get(NULL, "dpll_core_m6x2_ck");
+	dpll_core_m7x2_ck = clk_get(NULL, "dpll_core_m7x2_ck");
+	dpll_per_m7x2_ck = clk_get(NULL, "dpll_per_m7x2_ck");
+	gpu_fck = clk_get(NULL, "gpu_fck");
+	dpll_per_m3x2_ck = clk_get(NULL, "dpll_per_m3x2_ck");
+	dpll_per_m6x2_ck = clk_get(NULL, "dpll_per_m6x2_ck");
 	abe_clk = clk_get(NULL, "abe_clk");
-	fdif_clk = clk_get(NULL, "fdif_fck");
-	hsi_clk = clk_get(NULL, "hsi_fck");
+	fdif_fck = clk_get(NULL, "fdif_fck");
+	hsi_fck = clk_get(NULL, "hsi_fck");
 
 	/* Set SGX parent to PER DPLL */
-	clk_set_parent(gpu_fclk, sgx_clk);
-	clk_put(gpu_fclk);
+	clk_set_parent(gpu_fck, dpll_per_m7x2_ck);
+	clk_put(gpu_fck);
 
 	/* Populate the set rate and get rate for mpu, iva, dsp and l3 device */
 	dev = omap2_get_mpuss_device();
