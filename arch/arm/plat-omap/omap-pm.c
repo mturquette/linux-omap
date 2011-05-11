@@ -300,12 +300,12 @@ int omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, long r)
 		goto unlock;
 	}
 	if (r == -1) {
-		pr_debug("OMAP PM: remove min bus tput constraint for: "
+		pr_err("OMAP PM: remove min bus tput constraint for: "
 			"interconnect dev %s for agent_id %d\n", dev_name(dev),
 				agent_id);
 		target_level = remove_req_tput(dev, bus_tput);
 	} else {
-		pr_debug("OMAP PM: add min bus tput constraint for: "
+		pr_err("OMAP PM: add min bus tput constraint for: "
 			"interconnect dev %s for agent_id %d: rate %ld KiB\n",
 				dev_name(dev), agent_id, r);
 		target_level = add_req_tput(dev, r, bus_tput);

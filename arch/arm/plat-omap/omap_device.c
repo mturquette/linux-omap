@@ -905,11 +905,19 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 		return -ENODEV;
 	}
 
+	pr_err("%s: hwmod name is %s\n", __func__, od->hwmods[0]->name);
+	if (!strcmp(od->hwmods[0]->name, "l3_main_1"))
+		pr_err("l3_main_1 min min_freq is %lu\n", min_freq);
+
 	max_freq = ULONG_MAX;
 	if (IS_ERR(opp_find_freq_floor(dev, &max_freq))) {
 		dev_err(dev, "%s: Unable to find highest opp\n", __func__);
 		return -ENODEV;
 	}
+
+	pr_err("%s: hwmod name is %s\n", __func__, od->hwmods[0]->name);
+	if (!strcmp(od->hwmods[0]->name, "l3_main_1"))
+		pr_err("l3_main_1 min max_freq is %lu\n", max_freq);
 
 	if (rate < min_freq)
 		freq = min_freq;

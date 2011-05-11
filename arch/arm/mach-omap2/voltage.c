@@ -389,7 +389,7 @@ static struct omap_volt_data omap36xx_vdd2_volt_data[] = {
  * driver after reading the efuse.
  */
 static struct omap_volt_data omap44xx_vdd_mpu_volt_data[] = {
-	{.volt_nominal = 1005000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
+	{.volt_nominal = 1023000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1025000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1200000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1313000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP},
@@ -408,7 +408,7 @@ static struct omap_volt_data omap44xx_vdd_iva_volt_data[] = {
 };
 
 static struct omap_volt_data omap44xx_vdd_core_volt_data[] = {
-	{.volt_nominal = 1005000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
+	{.volt_nominal = 1023000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
 	{.volt_nominal = 1025000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
 	{.volt_nominal = 1200000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16},
 };
@@ -432,8 +432,8 @@ static struct omap_vdd_dep_info omap34xx_vdd1_dep_info[] = {
 
 /* OMAP 4430 MPU Core VDD dependency table */
 static struct omap_vdd_dep_volt omap44xx_vddmpu_vddcore_data[] = {
-	{.main_vdd_volt = 1005000, .dep_vdd_volt = 1025000},
-	{.main_vdd_volt = 1025000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1023000, .dep_vdd_volt = 1023000},
+	{.main_vdd_volt = 1025000, .dep_vdd_volt = 1023000},
 	{.main_vdd_volt = 1200000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1313000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1375000, .dep_vdd_volt = 1200000},
@@ -441,8 +441,8 @@ static struct omap_vdd_dep_volt omap44xx_vddmpu_vddcore_data[] = {
 };
 
 static struct omap_vdd_dep_volt omap44xx_vddiva_vddcore_data[] = {
-	{.main_vdd_volt = 1011000, .dep_vdd_volt = 1025000},
-	{.main_vdd_volt = 1013000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1011000, .dep_vdd_volt = 1023000},
+	{.main_vdd_volt = 1013000, .dep_vdd_volt = 1023000},
 	{.main_vdd_volt = 1188000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1300000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 0, .dep_vdd_volt = 0},
@@ -2061,8 +2061,10 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 
 	plist_node_init(&user->node, *volt);
 	plist_add(&user->node, &vdd->user_list);
+/* magic happens here */
 	node = plist_last(&vdd->user_list);
 	*volt = node->prio;
+pr_err("%s: volt is %lu\n", __func__, *volt);
 
 	mutex_unlock(&vdd->scaling_mutex);
 
