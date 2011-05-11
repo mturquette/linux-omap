@@ -907,7 +907,7 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 
 	pr_err("%s: hwmod name is %s\n", __func__, od->hwmods[0]->name);
 	if (!strcmp(od->hwmods[0]->name, "l3_main_1"))
-		pr_err("l3_main_1 min min_freq is %lu\n", min_freq);
+		pr_err("l3_main_1 min min_freq is %lu, rate is %lu\n", min_freq, rate);
 
 	max_freq = ULONG_MAX;
 	if (IS_ERR(opp_find_freq_floor(dev, &max_freq))) {
@@ -917,7 +917,7 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 
 	pr_err("%s: hwmod name is %s\n", __func__, od->hwmods[0]->name);
 	if (!strcmp(od->hwmods[0]->name, "l3_main_1"))
-		pr_err("l3_main_1 min max_freq is %lu\n", max_freq);
+		pr_err("l3_main_1 min max_freq is %lu, rate is %lu\n", max_freq, rate);
 
 	if (rate < min_freq)
 		freq = min_freq;
@@ -929,16 +929,17 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	/* Get the possible rate from the opp layer */
 	opp = opp_find_freq_ceil(dev, &freq);
 	if (IS_ERR(opp)) {
-		dev_dbg(dev, "%s: Unable to find OPP for freq%ld\n",
+		dev_err(dev, "%s: Unable to find OPP for freq%ld\n",
 			__func__, rate);
 		return -ENODEV;
 	}
 	if (unlikely(freq != rate))
-		dev_dbg(dev, "%s: Available freq %ld != dpll freq %ld.\n",
+		dev_err(dev, "%s: Available freq %ld != dpll freq %ld.\n",
 			__func__, freq, rate);
 
 	/* Get the voltage corresponding to the requested frequency */
 	volt = opp_get_voltage(opp);
+	pr_err("%s: %s corresponding voltage is %lu\n", __func__, od->hwmods[0]->name, volt);
 
 	/*
 	 * Call into the voltage layer to get the final voltage possible

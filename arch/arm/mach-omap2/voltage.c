@@ -2035,6 +2035,11 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 		return -EINVAL;
 	}
 
+	/*pdev = container_of(dev, struct platform_device, dev);
+	od = _find_by_pdev(pdev);*/
+
+pr_err("%s: voltdm is %s,volt is %lu\n", __func__, voltdm->name, *volt);
+
 	vdd = container_of(voltdm, struct omap_vdd_info, voltdm);
 
 	mutex_lock(&vdd->scaling_mutex);
@@ -2064,7 +2069,12 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 /* magic happens here */
 	node = plist_last(&vdd->user_list);
 	*volt = node->prio;
-pr_err("%s: volt is %lu\n", __func__, *volt);
+//pr_err("%s: volt is %lu\n", __func__, *volt);
+
+	plist_for_each_entry(user, &vdd->user_list, node) {
+		pr_err("%s: voltdm is %s, volt is %lu user->volt is %lu, node->prio is %d\n",
+			__func__, voltdm->name, *volt, user->volt, user->node.prio);
+	}
 
 	mutex_unlock(&vdd->scaling_mutex);
 
