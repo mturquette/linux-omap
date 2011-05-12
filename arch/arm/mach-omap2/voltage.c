@@ -433,7 +433,7 @@ static struct omap_vdd_dep_info omap34xx_vdd1_dep_info[] = {
 /* OMAP 4430 MPU Core VDD dependency table */
 static struct omap_vdd_dep_volt omap44xx_vddmpu_vddcore_data[] = {
 	{.main_vdd_volt = 1005000, .dep_vdd_volt = 0},
-	{.main_vdd_volt = 1025000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1025000, .dep_vdd_volt = 0},
 	{.main_vdd_volt = 1200000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1313000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1375000, .dep_vdd_volt = 1200000},
@@ -442,7 +442,7 @@ static struct omap_vdd_dep_volt omap44xx_vddmpu_vddcore_data[] = {
 
 static struct omap_vdd_dep_volt omap44xx_vddiva_vddcore_data[] = {
 	{.main_vdd_volt = 1011000, .dep_vdd_volt = 0},
-	{.main_vdd_volt = 1013000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1013000, .dep_vdd_volt = 0},
 	{.main_vdd_volt = 1188000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1300000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 0, .dep_vdd_volt = 0},
