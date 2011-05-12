@@ -113,6 +113,7 @@ int omap4_core_dpll_m2_set_rate(struct clk *clk, unsigned long rate)
 	 * parameters in EMIF shadow registers for validrate divided
 	 * by 2.
 	 */
+pr_err("%s: validrate is %lu\n", __func__, validrate);
 	omap_emif_setup_registers(validrate / 2, LPDDR2_VOLTAGE_STABLE);
 
 	/*

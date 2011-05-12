@@ -2072,8 +2072,8 @@ pr_err("%s: voltdm is %s,volt is %lu\n", __func__, voltdm->name, *volt);
 //pr_err("%s: volt is %lu\n", __func__, *volt);
 
 	plist_for_each_entry(user, &vdd->user_list, node) {
-		pr_err("%s: voltdm is %s, volt is %lu user->volt is %lu, node->prio is %d\n",
-			__func__, voltdm->name, *volt, user->volt, user->node.prio);
+		pr_err("%s: voltdm is %s, user->volt is %lu, node->prio is %d\n",
+			__func__, voltdm->name, user->volt, user->node.prio);
 	}
 
 	mutex_unlock(&vdd->scaling_mutex);

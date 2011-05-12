@@ -99,6 +99,8 @@ const struct lpddr2_min_tck min_tck_elpida = {
 
 struct lpddr2_device_info elpida_2G_S4 = {
 	.device_timings = {
+		//&timings_elpida_200_mhz,
+/* should we put another entry here?  how do we map the new OPP to the 200mhz timings? */
 		&timings_elpida_200_mhz,
 		&timings_elpida_333_mhz,
 		&timings_elpida_400_mhz
