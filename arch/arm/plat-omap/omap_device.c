@@ -891,8 +891,8 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 
 #ifdef CONFIG_ARCH_OMAP4
 	/* if in low power DPLL cascading mode, bail out early */
-	if (omap4_lpmode)
-		return -EINVAL;
+	/*if (omap4_lpmode)
+		return -EINVAL;*/
 #endif
 
 	/*
@@ -937,7 +937,17 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	 * for the voltage domain associated with the device.
 	 */
 	voltdm = od->hwmods[0]->voltdm;
-	ret = omap_voltage_add_userreq(voltdm, req_dev, &volt);
+
+	if (rate) {
+		pr_err("%s: adding req from %s towards %s.  rate is %lu\n",
+				dev_driver_string(req_dev), dev_driver_string(dev), rate);
+		ret = omap_voltage_add_userreq(voltdm, req_dev, &volt);
+	} else {
+		pr_err("%s: removing req from %s towards %s. rate is %lu\n",
+				dev_driver_string(req_dev), dev_driver_string(dev), rate);
+		ret = omap_voltage_remove_userreq(voltdm, req_dev, &volt);
+	}
+
 	if (ret) {
 		dev_err(dev, "%s: Unable to get the final volt for scaling\n",
 			__func__);

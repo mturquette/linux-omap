@@ -432,7 +432,7 @@ static struct omap_vdd_dep_info omap34xx_vdd1_dep_info[] = {
 
 /* OMAP 4430 MPU Core VDD dependency table */
 static struct omap_vdd_dep_volt omap44xx_vddmpu_vddcore_data[] = {
-	{.main_vdd_volt = 1005000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1005000, .dep_vdd_volt = 0},
 	{.main_vdd_volt = 1025000, .dep_vdd_volt = 1025000},
 	{.main_vdd_volt = 1200000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1313000, .dep_vdd_volt = 1200000},
@@ -441,7 +441,7 @@ static struct omap_vdd_dep_volt omap44xx_vddmpu_vddcore_data[] = {
 };
 
 static struct omap_vdd_dep_volt omap44xx_vddiva_vddcore_data[] = {
-	{.main_vdd_volt = 1011000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1011000, .dep_vdd_volt = 0},
 	{.main_vdd_volt = 1013000, .dep_vdd_volt = 1025000},
 	{.main_vdd_volt = 1188000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 1300000, .dep_vdd_volt = 1200000},
@@ -1839,6 +1839,7 @@ static int calc_dep_vdd_volt(struct device *dev,
 			}
 			nr_volt++;
 		}
+#if 0
 		if (!dep_volt) {
 			pr_warning("%s: Not able to find a matching volt for"
 				"vdd_%s corresponding to vdd_%s %ld volt\n",
@@ -1847,6 +1848,7 @@ static int calc_dep_vdd_volt(struct device *dev,
 			ret = -EINVAL;
 			continue;
 		}
+#endif
 
 		if (!dep_vdds[i].voltdm)
 			dep_vdds[i].voltdm =
@@ -1855,12 +1857,14 @@ static int calc_dep_vdd_volt(struct device *dev,
 		act_volt = dep_volt;
 
 		if (act_volt) {
+			pr_err("%s: adding userreq: main vdd is %s, act_volt is %lu\n", __func__, main_vdd->voltdm.name, act_volt);
 			/* See if dep_volt is possible for the vdd*/
 			ret = omap_voltage_add_userreq(dep_vdds[i].voltdm, dev,
 					&act_volt);
 		} else {
 			ret = omap_voltage_remove_userreq(dep_vdds[i].voltdm, dev,
 					&act_volt);
+			pr_err("%s: removing userreq: main vdd is %s, act_volt is %lu\n", __func__, main_vdd->voltdm.name, act_volt);
 		}
 	}
 
@@ -2039,6 +2043,12 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 		return -EINVAL;
 	}
 
+	if (!(*volt)) {
+		pr_err("%s: OH SHIT SHOULD NOT BE HERE\n", __func__);
+		dump_stack();
+		WARN_ON(1);
+	}
+
 	vdd = container_of(voltdm, struct omap_vdd_info, voltdm);
 
 	mutex_lock(&vdd->scaling_mutex);
@@ -2069,17 +2079,17 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 	*volt = node->prio;
 
 	plist_for_each_entry(user, &vdd->user_list, node) {
-		pr_err("%s: voltdm is %s, user->volt is %lu,
-				node->prio is %d\n",
+		pr_err("%s: voltdm is %s, user->volt is %lu, node->prio is %d\n",
 				__func__, voltdm->name, user->volt, user->node.prio);
-
-		voltage_reqs += user->volt;
+		//voltage_reqs += user->volt;
 	}
 
+	/*
 	if (voltage_reqs)
 		vdd_constraint = 1;
 	else
 		vdd_constraint = 0;
+	*/
 
 	mutex_unlock(&vdd->scaling_mutex);
 
@@ -2124,23 +2134,32 @@ int omap_voltage_remove_userreq(struct voltagedomain *voltdm, struct device *dev
 	*/
 
 	plist_for_each_entry(user, &vdd->user_list, node) {
-		pr_err("%s: voltdm is %s, user->volt is %lu,
-				node->prio is %d\n",
+		pr_err("%s: voltdm is %s, user->volt is %lu, node->prio is %d\n",
 				__func__, voltdm->name, user->volt, user->node.prio);
 
-		voltage_reqs += user->volt;
+		//voltage_reqs += user->volt;
 	}
 
+	/*
 	if (voltage_reqs)
 		vdd_constraint = 1;
 	else
 		vdd_constraint = 0;
+	*/
 
 	mutex_unlock(&vdd->scaling_mutex);
 
 	return 0;
 }
 
+int omap_voltage_userreq_empty(struct voltagedomain *voltdm)
+{
+	struct omap_vdd_info *vdd;
+
+	vdd = container_of(voltdm, struct omap_vdd_info, voltdm);
+
+	return plist_head_empty(&vdd->user_list);
+}
 /**
  * omap_vp_enable : API to enable a particular VP
  * @voltdm: pointer to the VDD whose VP is to be enabled.
@@ -2591,9 +2610,16 @@ int omap_voltage_scale(struct voltagedomain *voltdm)
 	curr_volt = omap_get_operation_voltage(
 			omap_voltage_get_nom_volt(voltdm));
 
-	/* Find the highest voltage for this vdd */
-	node = plist_last(&vdd->user_list);
-	volt = node->prio;
+	/* set volt to OPP50 voltage if there are no users */
+	if (plist_head_empty(&vdd->user_list)) {
+		pr_err("%s: user_list is empty\n", __func__);
+		volt = vdd->volt_data[1].volt_nominal;
+	/* find the highest voltage requested by a user */
+	} else {
+		pr_err("%s: user_list is NOT empty\n", __func__);
+		node = plist_last(&vdd->user_list);
+		volt = node->prio;
+	}
 
 	/* Disable smartreflex module across voltage and frequency scaling */
 	if (curr_volt != volt) {

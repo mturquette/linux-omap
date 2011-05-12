@@ -509,20 +509,28 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 void omap4_dpll_low_power_cascade_check_timer(struct work_struct *dwork)
 {
 	struct voltagedomain *voltdm_mpu, *voltdm_iva, *voltdm_core;
-	struct omap_vdd_info *vdd_mpu, *vdd_iva, *vdd_core;
+	//struct omap_vdd_info *vdd_mpu, *vdd_iva, *vdd_core;
 	int delay;
 
 	voltdm_mpu = omap_voltage_domain_get("mpu");
 	voltdm_iva = omap_voltage_domain_get("iva");
 	voltdm_core = omap_voltage_domain_get("core");
 
+	/*
 	vdd_mpu = container_of(voltdm, struct omap_vdd_info, voltdm);
 	vdd_iva = container_of(voltdm, struct omap_vdd_info, voltdm);
 	vdd_core = container_of(voltdm, struct omap_vdd_info, voltdm);
+	*/
 
-	if (num_online_cpus() > 1 || !plist_head_empty(vdd_mpu)
+	if (num_online_cpus() > 1
+			|| !omap_voltage_userreq_empty(voltdm_mpu)
+			|| !omap_voltage_userreq_empty(voltdm_iva)
+			|| !omap_voltage_userreq_empty(voltdm_core)) {
+		/*
+			|| !plist_head_empty(vdd_mpu)
 			|| !plist_head_empty(vdd_iva)
 			|| !plist_head_empty(vdd_core)) {
+			*/
 		pr_err("%s: blocked.  rescheduling\n", __func__);
 		delay = usecs_to_jiffies(LP_DELAY);
 
