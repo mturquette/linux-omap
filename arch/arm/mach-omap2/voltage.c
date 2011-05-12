@@ -1854,10 +1854,14 @@ static int calc_dep_vdd_volt(struct device *dev,
 
 		act_volt = dep_volt;
 
-		/* See if dep_volt is possible for the vdd*/
-		ret = omap_voltage_add_userreq(dep_vdds[i].voltdm, dev,
-				&act_volt);
-
+		if (act_volt) {
+			/* See if dep_volt is possible for the vdd*/
+			ret = omap_voltage_add_userreq(dep_vdds[i].voltdm, dev,
+					&act_volt);
+		} else {
+			ret = omap_voltage_remove_userreq(dep_vdds[i].voltdm, dev,
+					&act_volt);
+		}
 	}
 
 	return ret;
@@ -2028,7 +2032,7 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 	struct omap_vdd_info *vdd;
 	struct omap_vdd_user_list *user;
 	struct plist_node *node;
-	int found = 0;
+	int found = 0, voltage_req = 0;
 
 	if (!voltdm || IS_ERR(voltdm)) {
 		pr_warning("%s: VDD specified does not exist!\n", __func__);
@@ -2063,6 +2067,74 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 	plist_add(&user->node, &vdd->user_list);
 	node = plist_last(&vdd->user_list);
 	*volt = node->prio;
+
+	plist_for_each_entry(user, &vdd->user_list, node) {
+		pr_err("%s: voltdm is %s, user->volt is %lu,
+				node->prio is %d\n",
+				__func__, voltdm->name, user->volt, user->node.prio);
+
+		voltage_reqs += user->volt;
+	}
+
+	if (voltage_reqs)
+		vdd_constraint = 1;
+	else
+		vdd_constraint = 0;
+
+	mutex_unlock(&vdd->scaling_mutex);
+
+	return 0;
+}
+
+int omap_voltage_remove_userreq(struct voltagedomain *voltdm, struct device *dev,
+		unsigned long *volt)
+{
+	struct omap_vdd_info *vdd;
+	struct omap_vdd_user_list *user;
+	struct plist_node *node;
+	int found = 0, voltage_req = 0;
+
+	if (!voltdm || IS_ERR(voltdm)) {
+		pr_warning("%s: VDD specified does not exist!\n", __func__);
+		return -EINVAL;
+	}
+
+	vdd = container_of(voltdm, struct omap_vdd_info, voltdm);
+
+	mutex_lock(&vdd->scaling_mutex);
+
+	plist_for_each_entry(user, &vdd->user_list, node) {
+		if (user->dev == dev) {
+			found = 1;
+			break;
+		}
+	}
+
+	if (!found) {
+		pr_err("%s: could not find voltage user to remove\n",
+				__func__);
+		return -ENODEV;
+	} else {
+		plist_del(&user->node, &vdd->user_list);
+	}
+
+	/*
+	node = plist_last(&vdd->user_list);
+	*volt = node->prio;
+	*/
+
+	plist_for_each_entry(user, &vdd->user_list, node) {
+		pr_err("%s: voltdm is %s, user->volt is %lu,
+				node->prio is %d\n",
+				__func__, voltdm->name, user->volt, user->node.prio);
+
+		voltage_reqs += user->volt;
+	}
+
+	if (voltage_reqs)
+		vdd_constraint = 1;
+	else
+		vdd_constraint = 0;
 
 	mutex_unlock(&vdd->scaling_mutex);
 
