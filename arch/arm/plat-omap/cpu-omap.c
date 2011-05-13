@@ -147,8 +147,10 @@ static int omap_target(struct cpufreq_policy *policy,
 #endif
 
 	freq = target_freq * 1000;
-	if (opp_find_freq_ceil(mpu_dev, &freq))
+	if (opp_find_freq_ceil(mpu_dev, &freq)) {
+		pr_err("%s: calling omap_device_set_rate with rate of %lu\n", __func__, freq);
 		omap_device_set_rate(mpu_dev, mpu_dev, freq);
+	}
 #ifdef CONFIG_SMP
 	/*
 	 * Note that loops_per_jiffy is not updated on SMP systems in

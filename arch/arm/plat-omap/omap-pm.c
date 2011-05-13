@@ -313,6 +313,7 @@ int omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, long r)
 
 	/* Convert the throughput(in KiB/s) into Hz. */
 	target_level = (target_level * 1000)/4;
+	pr_err("%s: calling omap_device_set_rate with rate of %lu\n", __func__, target_level);
 	ret = omap_device_set_rate(&dummy_l3_dev, l3_dev, target_level);
 
 	if (ret)
@@ -634,6 +635,7 @@ int omap_pm_set_min_mpu_freq(struct device *dev, unsigned long f)
 	 * the new constraint.
 	 */
 	if (mpu_tput->max_level != old_max_level) {
+		pr_err("%s: calling omap_device_set_rate with rate of %lu\n", __func__, mpu_tput->max_level);
 		ret = omap_device_set_rate(&dummy_mpu_dev,
 					mpu_dev, mpu_tput->max_level);
 		if (ret)

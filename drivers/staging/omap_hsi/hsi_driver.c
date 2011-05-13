@@ -813,6 +813,7 @@ static int __init hsi_platform_device_probe(struct platform_device *pd)
 	device_init_wakeup(hsi_ctrl->dev, 1);
 
 	/* Set the HSI FCLK to default. */
+	pr_err("%s: calling omap_device_set_rate with rate of %lu\n", __func__, pdata->default_hsi_fclk);
 	err = omap_device_set_rate(hsi_ctrl->dev, hsi_ctrl->dev,
 					pdata->default_hsi_fclk);
 	if (err)
