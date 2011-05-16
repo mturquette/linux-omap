@@ -45,11 +45,11 @@ unsigned long omap_twl_vsel_to_uv(const u8 vsel)
 		}
 
 		if (smps_offset & 0x8) {
-			return ((((vsel - 1) * 125) + 7000)) * 100;
+			return ((((vsel - 1) * 1266) + 70900)) * 10;
 		} else {
 			if (vsel == 0x3A)
 				return 1350000;
-			return ((((vsel - 1) * 125) + 6000)) * 100;
+			return ((((vsel - 1) * 1266) + 60770)) * 10;
 		}
 	}
 
@@ -80,9 +80,9 @@ u8 omap_twl_uv_to_vsel(unsigned long uv)
 		}
 
 		if (smps_offset & 0x8) {
-			return DIV_ROUND_UP(uv - 700000, 12500) + 1;
+			return DIV_ROUND_UP(uv - 709000, 12660) + 1;
 		} else {
-			return DIV_ROUND_UP(uv - 600000, 12500) + 1;
+			return DIV_ROUND_UP(uv - 607700, 12660) + 1;
 		}
 	}
 
