@@ -939,16 +939,8 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	voltdm = od->hwmods[0]->voltdm;
 
 	if (rate) {
-		/*pr_err("%s: adding req from %s towards %s.  rate is %lu\n",
-				dev_driver_string(req_dev), dev_driver_string(dev), rate);*/
-		pr_err("%s: adding user request to vdd_%s, rate is %lu\n",
-				__func__, voltdm->name, rate);
 		ret = omap_voltage_add_userreq(voltdm, req_dev, &volt);
 	} else {
-		/*pr_err("%s: removing req from %s towards %s. rate is %lu\n",
-				dev_driver_string(req_dev), dev_driver_string(dev), rate);*/
-		pr_err("%s: removing user request to vdd_%s, rate is %lu\n",
-				__func__, voltdm->name, rate);
 		ret = omap_voltage_remove_userreq(voltdm, req_dev, &volt);
 	}
 

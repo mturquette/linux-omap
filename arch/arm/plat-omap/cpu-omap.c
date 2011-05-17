@@ -151,7 +151,6 @@ static int omap_target(struct cpufreq_policy *policy,
 
 	freq = target_freq * 1000;
 	if (opp_find_freq_ceil(mpu_dev, &freq)) {
-		pr_err("%s: calling omap_device_set_rate with rate of %lu\n", __func__, freq);
 		/* release constraint on vdd_mpu */
 		if (freq == min_freq)
 			omap_device_set_rate(mpu_dev, mpu_dev, 0);

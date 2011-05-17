@@ -115,7 +115,6 @@ inline int ipu_pm_module_set_rate(unsigned rsrc,
 			dp = pd[target].dev;
 	}
 
-	pr_err("%s: calling omap_device_set_rate with rate of %lu\n", __func__, rate);
 	ret = omap_device_set_rate(pd[rsrc].dev, dp, rate);
 	if (ret)
 		pr_err("device set rate failed %s", pd[target_rsrc].oh_name);

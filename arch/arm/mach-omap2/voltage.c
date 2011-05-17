@@ -1856,14 +1856,12 @@ static int calc_dep_vdd_volt(struct device *dev,
 		act_volt = dep_volt;
 
 		if (act_volt) {
-			pr_err("%s: adding userreq: main vdd is %s, act_volt is %lu\n", __func__, main_vdd->voltdm.name, act_volt);
 			/* See if dep_volt is possible for the vdd*/
 			ret = omap_voltage_add_userreq(dep_vdds[i].voltdm, dev,
 					&act_volt);
 		} else {
 			ret = omap_voltage_remove_userreq(dep_vdds[i].voltdm, dev,
 					&act_volt);
-			pr_err("%s: removing userreq: main vdd is %s, act_volt is %lu\n", __func__, main_vdd->voltdm.name, act_volt);
 		}
 	}
 
@@ -2043,9 +2041,8 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 	}
 
 	if (!(*volt)) {
-		pr_err("%s: OH SHIT SHOULD NOT BE HERE\n", __func__);
-		dump_stack();
-		WARN_ON(1);
+		pr_warn("%s: voltage should not be zero\n", __func__);
+		return -EINVAL;
 	}
 
 	vdd = container_of(voltdm, struct omap_vdd_info, voltdm);
@@ -2076,19 +2073,6 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 	plist_add(&user->node, &vdd->user_list);
 	node = plist_last(&vdd->user_list);
 	*volt = node->prio;
-
-	plist_for_each_entry(user, &vdd->user_list, node) {
-		pr_err("%s: voltdm is %s, user->volt is %lu, node->prio is %d\n",
-				__func__, voltdm->name, user->volt, user->node.prio);
-		//voltage_reqs += user->volt;
-	}
-
-	/*
-	if (voltage_reqs)
-		vdd_constraint = 1;
-	else
-		vdd_constraint = 0;
-	*/
 
 	mutex_unlock(&vdd->scaling_mutex);
 
@@ -2126,25 +2110,6 @@ int omap_voltage_remove_userreq(struct voltagedomain *voltdm, struct device *dev
 	} else {
 		plist_del(&user->node, &vdd->user_list);
 	}
-
-	/*
-	node = plist_last(&vdd->user_list);
-	*volt = node->prio;
-	*/
-
-	plist_for_each_entry(user, &vdd->user_list, node) {
-		pr_err("%s: voltdm is %s, user->volt is %lu, node->prio is %d\n",
-				__func__, voltdm->name, user->volt, user->node.prio);
-
-		//voltage_reqs += user->volt;
-	}
-
-	/*
-	if (voltage_reqs)
-		vdd_constraint = 1;
-	else
-		vdd_constraint = 0;
-	*/
 
 	mutex_unlock(&vdd->scaling_mutex);
 
@@ -2611,13 +2576,13 @@ int omap_voltage_scale(struct voltagedomain *voltdm)
 
 	/* set volt to OPP50 voltage if there are no users */
 	if (plist_head_empty(&vdd->user_list)) {
-		pr_err("%s: user_list is empty\n", __func__);
 		volt = vdd->volt_data[1].volt_nominal;
+		pr_err("%s: user_list is empty, volt is %lu\n", __func__, volt);
 	/* find the highest voltage requested by a user */
 	} else {
-		pr_err("%s: user_list is NOT empty\n", __func__);
 		node = plist_last(&vdd->user_list);
 		volt = node->prio;
+		pr_err("%s: user_list is NOT empty, volt is %lu\n", __func__, volt);
 	}
 
 	/* Disable smartreflex module across voltage and frequency scaling */
