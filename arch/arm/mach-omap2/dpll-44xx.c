@@ -509,13 +509,24 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 void omap4_dpll_low_power_cascade_check_timer(struct work_struct *dwork)
 {
 	int delay;
+	struct voltagedomain *voltdm_mpu, *voltdm_iva, *voltdm_core;
 
-	if (num_online_cpus() > 1) {
+	voltdm_mpu = omap_voltage_domain_get("mpu");
+	voltdm_iva = omap_voltage_domain_get("iva");
+	voltdm_core = omap_voltage_domain_get("core");
+
+	if (num_online_cpus() > 1
+			|| omap_voltage_userreq_freq(voltdm_mpu)
+			|| omap_voltage_userreq_freq(voltdm_core)
+			|| omap_voltage_userreq_freq(voltdm_iva) > LP_98M_RATE) {
+		pr_err("%s: blocked.  rescheduling\n", __func__);
 		delay = usecs_to_jiffies(LP_DELAY);
 
 		schedule_delayed_work_on(0, &lpmode_work, delay);
-	} else
+	} else {
+		pr_err("%s: not blocked.  entering DPLL cascading\n", __func__);
 		omap4_dpll_low_power_cascade_enter();
+	}
 }
 
 int omap4_dpll_low_power_cascade_check_entry()
