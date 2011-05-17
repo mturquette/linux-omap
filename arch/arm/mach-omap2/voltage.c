@@ -166,7 +166,7 @@ struct omap_vdd_dep_info{
 struct omap_vdd_user_list {
 	struct device *dev;
 	struct plist_node node;
-	u32 volt;
+	u32 freq;
 };
 
 /**
@@ -550,9 +550,9 @@ static int volt_dbg_show_users(struct seq_file *s, void *unused)
 	vdd = (struct omap_vdd_info *)s->private ;
 	plist_for_each_entry(user, &vdd->user_list, node) {
 		count++;
-		pr_info("VDD=%s: User=%d: Name=%s: Volt=%d: Prio=%d\n",
+		pr_info("VDD=%s: User=%d: Name=%s: Freq=%d: Prio=%d\n",
 			vdd->voltdm.name, count, dev_name(user->dev),
-			user->volt, user->node.prio);
+			user->freq, user->node.prio);
 	}
 
 	return 0;
