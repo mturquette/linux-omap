@@ -2073,6 +2073,29 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 }
 
 /**
+ * omap_voltage_userreq_freq - return highest intended frequency for this vdd
+ *
+ * @voltdm: pointer to voltage domain which is to be queried
+ */
+unsigned long omap_voltage_userreq_freq(struct voltagedomain *voltdm)
+{
+	struct omap_vdd_info *vdd;
+	struct omap_vdd_user_list *user;
+	struct plist_node *node;
+	unsigned long freq = 0;
+
+	vdd = container_of(voltdm, struct omap_vdd_info, voltdm);
+
+	plist_for_each_entry(user, &vdd->user_list, node) {
+		freq = (user->freq > freq) ? user->freq : freq;
+		pr_err("%s: user->freq is %lu, freq is %lu\n",
+				__func__, user->freq, freq);
+	}
+
+	return freq;
+}
+
+/**
  * omap_vp_enable : API to enable a particular VP
  * @voltdm: pointer to the VDD whose VP is to be enabled.
  *

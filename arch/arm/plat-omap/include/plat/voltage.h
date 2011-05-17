@@ -132,6 +132,7 @@ void omap_voltage_register_pmic(struct omap_volt_pmic_info *pmic_info,
 struct omap_volt_data *omap_voltage_get_nom_volt(struct voltagedomain *voltdm);
 int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 		unsigned long *volt, unsigned long intent);
+unsigned long omap_voltage_userreq_freq(struct voltagedomain *voltdm);
 int omap_voltage_scale(struct voltagedomain *voltdm);
 bool omap_vp_is_transdone(struct voltagedomain *voltdm);
 bool omap_vp_clear_transdone(struct voltagedomain *voltdm);
