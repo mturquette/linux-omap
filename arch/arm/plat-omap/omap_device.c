@@ -880,7 +880,7 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 			unsigned long rate)
 {
 	struct omap_opp *opp;
-	unsigned long volt, freq, min_freq, max_freq;
+	unsigned long volt, freq, min_freq, max_freq, intent;
 	struct voltagedomain *voltdm;
 	struct platform_device *pdev;
 	struct omap_device *od;
@@ -918,6 +918,11 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	else
 		freq = rate;
 
+	if (!rate)
+		intent = 0;
+	else
+		intent = freq;
+
 	/* Get the possible rate from the opp layer */
 	opp = opp_find_freq_ceil(dev, &freq);
 	if (IS_ERR(opp)) {
@@ -937,7 +942,7 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	 * for the voltage domain associated with the device.
 	 */
 	voltdm = od->hwmods[0]->voltdm;
-	ret = omap_voltage_add_userreq(voltdm, req_dev, &volt);
+	ret = omap_voltage_add_userreq(voltdm, req_dev, &volt, intent);
 	if (ret) {
 		dev_err(dev, "%s: Unable to get the final volt for scaling\n",
 			__func__);

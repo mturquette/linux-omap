@@ -1830,11 +1830,16 @@ static int calc_dep_vdd_volt(struct device *dev,
 	for (i = 0; i < main_vdd->nr_dep_vdd; i++) {
 		struct omap_vdd_dep_volt *volt_table = dep_vdds[i].dep_table;
 		int nr_volt = 0;
-		unsigned long dep_volt = 0, act_volt = 0;
+		unsigned long dep_volt = 0, act_volt = 0, intent;
 
 		while (volt_table[nr_volt].main_vdd_volt != 0) {
 			if (volt_table[nr_volt].main_vdd_volt == main_volt) {
 				dep_volt = volt_table[nr_volt].dep_vdd_volt;
+				if (nr_volt != 1 || intent != 0) {
+					pr_err("%s: nr_volt is %lu, intent is %lu\n",
+							__func__, nr_volt, intent);
+					intent = dep_volt;
+				}
 				break;
 			}
 			nr_volt++;
@@ -1856,7 +1861,7 @@ static int calc_dep_vdd_volt(struct device *dev,
 
 		/* See if dep_volt is possible for the vdd*/
 		ret = omap_voltage_add_userreq(dep_vdds[i].voltdm, dev,
-				&act_volt);
+				&act_volt, intent);
 
 	}
 
@@ -2023,7 +2028,7 @@ unsigned long omap_vp_get_curr_volt(struct voltagedomain *voltdm)
  * Returns error value in case of any errors.
  */
 int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
-		unsigned long *volt)
+		unsigned long *volt, unsigned long intent)
 {
 	struct omap_vdd_info *vdd;
 	struct omap_vdd_user_list *user;
@@ -2041,6 +2046,7 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 
 	plist_for_each_entry(user, &vdd->user_list, node) {
 		if (user->dev == dev) {
+			user->volt = intent;
 			found = 1;
 			break;
 		}
