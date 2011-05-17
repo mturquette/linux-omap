@@ -97,7 +97,7 @@ static int omap_target(struct cpufreq_policy *policy,
 #endif
 #if defined(CONFIG_ARCH_OMAP3) || defined(CONFIG_ARCH_OMAP4)
 	int i;
-	unsigned long freq;
+	unsigned long freq, min_freq = 0;
 	struct cpufreq_freqs freqs_notify;
 	struct device *mpu_dev = omap2_get_mpuss_device();
 	int ret = 0;
@@ -146,9 +146,18 @@ static int omap_target(struct cpufreq_policy *policy,
 	}
 #endif
 
+	/* determine the lowest enabled frequency */
+	opp_find_freq_ceil(mpu_dev, &min_freq);
+
 	freq = target_freq * 1000;
-	if (opp_find_freq_ceil(mpu_dev, &freq))
-		omap_device_set_rate(mpu_dev, mpu_dev, freq);
+	if (opp_find_freq_ceil(mpu_dev, &freq)) {
+		/* release constraint on vdd_mpu */
+		if (freq == min_freq)
+			omap_device_set_rate(mpu_dev, mpu_dev, 0);
+		/* set constraint on vdd_mpu */
+		else
+			omap_device_set_rate(mpu_dev, mpu_dev, freq);
+	}
 #ifdef CONFIG_SMP
 	/*
 	 * Note that loops_per_jiffy is not updated on SMP systems in

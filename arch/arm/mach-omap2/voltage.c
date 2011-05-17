@@ -1835,11 +1835,8 @@ static int calc_dep_vdd_volt(struct device *dev,
 		while (volt_table[nr_volt].main_vdd_volt != 0) {
 			if (volt_table[nr_volt].main_vdd_volt == main_volt) {
 				dep_volt = volt_table[nr_volt].dep_vdd_volt;
-				if (nr_volt != 1 || intent != 0) {
-					pr_err("%s: nr_volt is %lu, intent is %lu\n",
-							__func__, nr_volt, intent);
+				if (nr_volt != 1 || intent != 0)
 					intent = dep_volt;
-				}
 				break;
 			}
 			nr_volt++;
