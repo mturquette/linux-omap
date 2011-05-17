@@ -1839,8 +1839,8 @@ static int calc_dep_vdd_volt(struct device *dev,
 			}
 			nr_volt++;
 		}
-#if 0
-		if (!dep_volt) {
+
+		if (main_volt && !dep_volt) {
 			pr_warning("%s: Not able to find a matching volt for"
 				"vdd_%s corresponding to vdd_%s %ld volt\n",
 				__func__, dep_vdds[i].name,
@@ -1848,7 +1848,6 @@ static int calc_dep_vdd_volt(struct device *dev,
 			ret = -EINVAL;
 			continue;
 		}
-#endif
 
 		if (!dep_vdds[i].voltdm)
 			dep_vdds[i].voltdm =
