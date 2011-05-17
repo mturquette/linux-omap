@@ -2043,7 +2043,7 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 
 	plist_for_each_entry(user, &vdd->user_list, node) {
 		if (user->dev == dev) {
-			user->volt = intent;
+			user->freq = intent;
 			found = 1;
 			break;
 		}
