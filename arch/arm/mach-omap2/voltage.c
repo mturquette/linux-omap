@@ -41,6 +41,8 @@
 #include <plat/smartreflex.h>
 #include <plat/control.h>
 
+#include <mach/omap4-common.h>
+
 #include "prm-regbits-34xx.h"
 #include "prm44xx.h"
 #include "prm-regbits-44xx.h"
@@ -2068,6 +2070,13 @@ int omap_voltage_add_userreq(struct voltagedomain *voltdm, struct device *dev,
 	*volt = node->prio;
 
 	mutex_unlock(&vdd->scaling_mutex);
+
+	if (cpu_is_omap44xx() && omap4_lpmode
+			&& omap4_dpll_cascade_check_voltdm(voltdm)) {
+		pr_err("%s: here\n", __func__);
+		omap4_dpll_low_power_cascade_exit();
+		//omap4_dpll_low_power_cascade_check_entry();
+	}
 
 	return 0;
 }

@@ -886,13 +886,20 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	struct omap_device *od;
 	int ret;
 
+	//pr_err("%s: here\n", __func__);
 	pdev = container_of(dev, struct platform_device, dev);
 	od = _find_by_pdev(pdev);
 
+#if 0
 #ifdef CONFIG_ARCH_OMAP4
 	/* if in low power DPLL cascading mode, bail out early */
-	if (omap4_lpmode)
-		return -EINVAL;
+	if (omap4_lpmode) {
+		/*dump_stack();
+		return -EINVAL;*/
+
+		if (
+	}
+#endif
 #endif
 
 	/*

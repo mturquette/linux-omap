@@ -40,6 +40,7 @@
 static struct delayed_work	lpmode_work;
 
 bool omap4_lpmode = false;
+bool omap4_cascaded = false;
 
 static struct clockdomain *l3_emif_clkdm;
 static struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck;
@@ -506,9 +507,43 @@ long omap4_dpll_regm4xen_round_rate(struct clk *clk, unsigned long target_rate)
 	return clk->dpll_data->last_rounded_rate;
 }
 
-void omap4_dpll_low_power_cascade_check_timer(struct work_struct *dwork)
+/*
+ * return 1 means that we should exit DPLL cascading.  returning 0 means we're
+ * ok to stay in DPLL cascading
+ */
+int omap4_dpll_cascade_check_voltdm(struct voltagedomain *voltdm)
 {
-	int delay;
+	int ret = 0;
+	unsigned long freq;
+	//struct voltagedomain *voltdm;
+
+	if (!voltdm || IS_ERR(voltdm)) {
+		pr_warning("%s: voltdm is invalid\n", __func__);
+		return -EINVAL;
+	}
+
+	if (!strcmp("mpu", voltdm->name))
+		freq = LP_196M_RATE;
+	else if (!strcmp("iva", voltdm->name))
+		freq = LP_98M_RATE;
+	else if (!strcmp("core", voltdm->name))
+		freq = LP_196M_RATE;
+	else {
+		pr_err("%s: shouldn't be here\n", __func__);
+		return -EINVAL;
+	}
+
+	if (omap_voltage_userreq_freq(voltdm) > freq)
+		ret = 1;
+
+	pr_err("%s: ret is %d\n", __func__, ret);
+	return ret;
+}
+
+#if 0
+int omap4_dpll_cascade_exit_condition()
+{
+	int ret = 0;
 	struct voltagedomain *voltdm_mpu, *voltdm_iva, *voltdm_core;
 
 	voltdm_mpu = omap_voltage_domain_get("mpu");
@@ -516,9 +551,50 @@ void omap4_dpll_low_power_cascade_check_timer(struct work_struct *dwork)
 	voltdm_core = omap_voltage_domain_get("core");
 
 	if (num_online_cpus() > 1
-			|| omap_voltage_userreq_freq(voltdm_mpu)
-			|| omap_voltage_userreq_freq(voltdm_core)
-			|| omap_voltage_userreq_freq(voltdm_iva) > LP_98M_RATE) {
+			|| omap4_dpll_cascade_exit_condition(voltdm_mpu)
+			|| omap4_dpll_cascade_exit_condition(voltdm_iva)
+			|| omap4_dpll_cascade_exit_condition(voltdm_core)) {
+		ret = 1;
+	}
+
+	/*if (num_online_cpus() > 1
+			|| omap_voltage_userreq_freq(voltdm_mpu) > LP_196M_RATE
+			|| omap_voltage_userreq_freq(voltdm_core) > LP_196M_RATE
+			|| omap_voltage_userreq_freq(voltdm_iva) > LP_98M_RATE)
+		ret = 1;*/
+
+	/*ret = omap4_dpll_low_power_cascade_voltdm_exit_condition("mpu");
+	ret =| omap4_dpll_low_power_cascade_voltdm_exit_condition("iva");
+	ret =| omap4_dpll_low_power_cascade_voltdm_exit_condition("core");*/
+
+	return ret;
+}
+#endif
+
+void omap4_dpll_low_power_cascade_check_timer(struct work_struct *dwork)
+{
+	int delay, ret = 0;
+	struct voltagedomain *voltdm_mpu, *voltdm_iva, *voltdm_core;
+
+	pr_err("%s: herezzzz\n", __func__);
+	/*ret = omap4_dpll_low_power_cascade_voltdm_exit_condition("mpu");
+	ret =| omap4_dpll_low_power_cascade_voltdm_exit_condition("iva");
+	ret =| omap4_dpll_low_power_cascade_voltdm_exit_condition("core");*/
+
+	//ret = omap4_dpll_cascade_exit_condition();
+
+	voltdm_mpu = omap_voltage_domain_get("mpu");
+	voltdm_iva = omap_voltage_domain_get("iva");
+	voltdm_core = omap_voltage_domain_get("core");
+
+	if (num_online_cpus() > 1
+			|| omap4_dpll_cascade_check_voltdm(voltdm_mpu)
+			|| omap4_dpll_cascade_check_voltdm(voltdm_iva)
+			|| omap4_dpll_cascade_check_voltdm(voltdm_core)) {
+		ret = 1;
+	}
+
+	if (ret) {
 		pr_err("%s: blocked.  rescheduling\n", __func__);
 		delay = usecs_to_jiffies(LP_DELAY);
 
@@ -613,6 +689,12 @@ int omap4_dpll_low_power_cascade_enter()
 		ret = -ENODEV;
 		goto out;
 	}
+
+	/*if (!omap4_lpmode)
+		return -EINVAL;*/
+
+	if (omap4_cascaded)
+		return -EINVAL;
 
 	/* prevent DPLL_ABE & DPLL_CORE from idling */
 	omap3_dpll_deny_idle(dpll_abe_ck);
@@ -715,7 +797,7 @@ int omap4_dpll_low_power_cascade_enter()
 	} else
 		pr_debug("%s: DPLL_MPU entered Low Power bypass\n", __func__);
 
-	omap4_lpmode = true;
+	//omap4_lpmode = true;
 
 	/* bypass DPLL_IVA */
 	state.dpll_iva_ck_rate = dpll_iva_ck->rate;
@@ -770,6 +852,8 @@ int omap4_dpll_low_power_cascade_enter()
 
 	recalculate_root_clocks();
 
+	omap4_cascaded = true;
+
 	goto out;
 
 dpll_per_bypass_fail:
@@ -784,7 +868,7 @@ dpll_iva_bypass_fail:
 				(1 << state.div_iva_hs_clk_div)));
 	clk_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);
 dpll_mpu_bypass_fail:
-	omap4_lpmode = false;
+	//omap4_lpmode = false;
 	clk_set_rate(div_mpu_hs_clk, (div_mpu_hs_clk->parent->rate /
 				(1 << state.div_mpu_hs_clk_div)));
 	clk_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
@@ -875,11 +959,15 @@ int omap4_dpll_low_power_cascade_exit()
 	if (delayed_work_pending(&lpmode_work))
 		cancel_delayed_work_sync(&lpmode_work);
 
-	if (!omap4_lpmode)
-		return 0;
+	if (!omap4_cascaded)
+		return -EINVAL;
 
-	omap4_lpmode = false;
+	/*if (!omap4_lpmode)
+		return -EINVAL;*/
 
+	//omap4_lpmode = false;
+
+#if 0
 	cp = cpufreq_cpu_get(0);
 	cp->min = state.cpufreq_policy_min_rate;
 	cp->max = state.cpufreq_policy_max_rate;
@@ -887,6 +975,12 @@ int omap4_dpll_low_power_cascade_exit()
 	cpufreq_driver_target(cp, state.cpufreq_policy_cur_rate,
 			CPUFREQ_RELATION_H);
 	opp_disable(state.mpu_opp);
+#endif
+
+	/* lock DPLL_MPU */
+	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
+	if (ret)
+		pr_err("%s: DPLL_MPU failed to relock\n", __func__);
 
 	/* lock DPLL_IVA */
 	ret = omap3_noncore_dpll_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);
@@ -974,6 +1068,8 @@ int omap4_dpll_low_power_cascade_exit()
 				__func__);*/
 
 	recalculate_root_clocks();
+
+	omap4_cascaded = false;
 
 out:
 	return ret;

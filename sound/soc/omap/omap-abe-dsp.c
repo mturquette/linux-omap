@@ -48,6 +48,7 @@
 #include <plat/omap-pm.h>
 #include <plat/powerdomain.h>
 #include <plat/prcm.h>
+#include <mach/omap4-common.h>
 #include "../../../arch/arm/mach-omap2/pm.h"
 #include "../../../arch/arm/mach-omap2/cm-regbits-44xx.h"
 
@@ -359,6 +360,8 @@ static int abe_enter_dpll_cascading(struct abe_data *abe)
 
 	dev_dbg(&pdev->dev, "Enter DPLL cascading\n");
 	if (pdata->enter_dpll_cascade) {
+		//pr_err("%s: trying to enter DPLL cascading\n", __func__);
+		omap4_lpmode = true;
 		ret = pdata->enter_dpll_cascade();
 		if (ret < 0) {
 			dev_err(&pdev->dev, "failed to enter DPLL cascading %d\n",
@@ -383,7 +386,9 @@ static int abe_exit_dpll_cascading(struct abe_data *abe)
 
 	dev_dbg(&pdev->dev, "Exit DPLL cascading\n");
 	if (pdata->exit_dpll_cascade) {
+		//pr_err("%s: trying to exit DPLL cascading\n", __func__);
 		ret = pdata->exit_dpll_cascade();
+		omap4_lpmode = false;
 		if (ret < 0) {
 			dev_err(&pdev->dev, "failed to exit DPLL cascading %d\n",
 				ret);
