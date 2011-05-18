@@ -881,6 +881,7 @@ int omap4_dpll_low_power_cascade_exit()
 
 	omap4_lpmode = false;
 
+#if 0
 	cp = cpufreq_cpu_get(0);
 	cp->min = state.cpufreq_policy_min_rate;
 	cp->max = state.cpufreq_policy_max_rate;
@@ -888,6 +889,13 @@ int omap4_dpll_low_power_cascade_exit()
 	cpufreq_driver_target(cp, state.cpufreq_policy_cur_rate,
 			CPUFREQ_RELATION_H);
 	opp_disable(state.mpu_opp);
+#endif
+
+
+	/* lock DPLL_MPU */
+	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
+	if (ret)
+		pr_err("%s: DPLL_MPU failed to relock\n", __func__);
 
 	/* lock DPLL_IVA */
 	ret = omap3_noncore_dpll_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);

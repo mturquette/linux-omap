@@ -83,6 +83,7 @@
 #include <linux/err.h>
 #include <linux/io.h>
 #include <linux/clk.h>
+#include <linux/delay.h>
 
 #include <plat/omap_device.h>
 #include <plat/omap_hwmod.h>
@@ -921,10 +922,13 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	/* if in low power DPLL cascading mode, bail out early */
 	//if (cpu_is_omap44xx() && omap4_lpmode && intent) {
 	if (cpu_is_omap44xx() && omap4_lpmode) {
+		//return -EINVAL;
 		omap4_dpll_low_power_cascade_exit();
+		mdelay(100);
 		stopped_dpll_cascading = 1;
 		pr_err("%s: exiting dpll cascading, rate is %lu, freq is %lu, intent is %lu, stopped_dpll_cascading is %d\n",
 				__func__, rate, freq, intent, stopped_dpll_cascading);
+		mdelay(100);
 		//return -EINVAL;
 		/* maybe need a delay here? */
 	}
