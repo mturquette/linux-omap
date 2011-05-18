@@ -706,22 +706,8 @@ int omap4_dpll_low_power_cascade_enter()
 
 	/* bypass DPLL_MPU */
 	state.dpll_mpu_ck_rate = dpll_mpu_ck->rate;
-
-	mpu_dev = omap2_get_mpuss_device();
-	opp = opp_find_voltage(mpu_dev, 1005000, false);
-	opp_enable(opp);
-	state.mpu_opp = opp;
-
-	cp = cpufreq_cpu_get(0);
-	state.cpufreq_policy_cur_rate = cp->cur;
-	state.cpufreq_policy_min_rate = cp->min;
-	state.cpufreq_policy_max_rate = cp->max;
-
-	/* cpufreq takes in KHz */
-	cp->min = LP_196M_RATE / 1000;
-	cp->max = LP_196M_RATE / 1000;
-	cpufreq_cpu_put(cp);
-	ret = cpufreq_driver_target(cp, LP_196M_RATE / 1000, CPUFREQ_RELATION_H);
+	ret = omap3_noncore_dpll_set_rate(dpll_mpu_ck,
+			dpll_mpu_ck->dpll_data->clk_bypass->rate);
 	if (ret) {
 		pr_err("%s: DPLL_MPU failed to enter Low Power bypass\n",
 				__func__);
