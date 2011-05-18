@@ -924,11 +924,11 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	if (cpu_is_omap44xx() && omap4_lpmode) {
 		//return -EINVAL;
 		omap4_dpll_low_power_cascade_exit();
-		mdelay(100);
+		//mdelay(100);
 		stopped_dpll_cascading = 1;
 		pr_err("%s: exiting dpll cascading, rate is %lu, freq is %lu, intent is %lu, stopped_dpll_cascading is %d\n",
 				__func__, rate, freq, intent, stopped_dpll_cascading);
-		mdelay(100);
+		//mdelay(100);
 		//return -EINVAL;
 		/* maybe need a delay here? */
 	}
@@ -963,7 +963,7 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	/* Do the actual scaling */
 	ret = omap_voltage_scale(voltdm);
 
-	if (stopped_dpll_cascading)
+	if (omap4_lpmode && stopped_dpll_cascading)
 		omap4_dpll_low_power_cascade_enter();
 
 	return ret;

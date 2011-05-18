@@ -40,6 +40,7 @@
 static struct delayed_work	lpmode_work;
 
 bool omap4_lpmode = false;
+bool in_cascading = false;
 
 static struct clockdomain *l3_emif_clkdm;
 static struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck;
@@ -615,7 +616,9 @@ int omap4_dpll_low_power_cascade_enter()
 		goto out;
 	}
 
-	omap4_lpmode = true;
+	//omap4_lpmode = true;
+
+	in_cascading = true;
 
 	/* prevent DPLL_ABE & DPLL_CORE from idling */
 	omap3_dpll_deny_idle(dpll_abe_ck);
@@ -785,7 +788,7 @@ dpll_iva_bypass_fail:
 				(1 << state.div_iva_hs_clk_div)));
 	clk_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);
 dpll_mpu_bypass_fail:
-	omap4_lpmode = false;
+	//omap4_lpmode = false;
 	clk_set_rate(div_mpu_hs_clk, (div_mpu_hs_clk->parent->rate /
 				(1 << state.div_mpu_hs_clk_div)));
 	clk_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
@@ -876,10 +879,15 @@ int omap4_dpll_low_power_cascade_exit()
 	if (delayed_work_pending(&lpmode_work))
 		cancel_delayed_work_sync(&lpmode_work);
 
+	/*
 	if (!omap4_lpmode)
 		return 0;
 
 	omap4_lpmode = false;
+	*/
+
+	if(!in_cascading)
+		return -EINVAL;
 
 #if 0
 	cp = cpufreq_cpu_get(0);
