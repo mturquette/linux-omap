@@ -884,16 +884,10 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	struct voltagedomain *voltdm;
 	struct platform_device *pdev;
 	struct omap_device *od;
-	int ret;
+	int ret, stopped_dpll_cascading = 0;
 
 	pdev = container_of(dev, struct platform_device, dev);
 	od = _find_by_pdev(pdev);
-
-#ifdef CONFIG_ARCH_OMAP4
-	/* if in low power DPLL cascading mode, bail out early */
-	if (omap4_lpmode)
-		return -EINVAL;
-#endif
 
 	/*
 	 * Figure out if the desired frquency lies between the
@@ -923,6 +917,19 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	else
 		intent = freq;
 
+#ifdef CONFIG_ARCH_OMAP4
+	/* if in low power DPLL cascading mode, bail out early */
+	//if (cpu_is_omap44xx() && omap4_lpmode && intent) {
+	if (cpu_is_omap44xx() && omap4_lpmode) {
+		omap4_dpll_low_power_cascade_exit();
+		stopped_dpll_cascading = 1;
+		pr_err("%s: exiting dpll cascading, rate is %lu, freq is %lu, intent is %lu, stopped_dpll_cascading is %d\n",
+				__func__, rate, freq, intent, stopped_dpll_cascading);
+		//return -EINVAL;
+		/* maybe need a delay here? */
+	}
+#endif
+
 	/* Get the possible rate from the opp layer */
 	opp = opp_find_freq_ceil(dev, &freq);
 	if (IS_ERR(opp)) {
@@ -950,7 +957,12 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	}
 
 	/* Do the actual scaling */
-	return omap_voltage_scale(voltdm);
+	ret = omap_voltage_scale(voltdm);
+
+	if (stopped_dpll_cascading)
+		omap4_dpll_low_power_cascade_enter();
+
+	return ret;
 }
 EXPORT_SYMBOL(omap_device_set_rate);
 

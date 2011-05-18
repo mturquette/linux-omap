@@ -515,8 +515,9 @@ void omap4_dpll_low_power_cascade_check_timer(struct work_struct *dwork)
 	voltdm_iva = omap_voltage_domain_get("iva");
 	voltdm_core = omap_voltage_domain_get("core");
 
-	if (num_online_cpus() > 1
-			|| omap_voltage_userreq_freq(voltdm_mpu)
+	/*if (num_online_cpus() > 1
+			|| omap_voltage_userreq_freq(voltdm_mpu)*/
+	if (omap_voltage_userreq_freq(voltdm_mpu)
 			|| omap_voltage_userreq_freq(voltdm_core)
 			|| omap_voltage_userreq_freq(voltdm_iva) > LP_98M_RATE) {
 		pr_err("%s: blocked.  rescheduling\n", __func__);
@@ -613,6 +614,8 @@ int omap4_dpll_low_power_cascade_enter()
 		ret = -ENODEV;
 		goto out;
 	}
+
+	omap4_lpmode = true;
 
 	/* prevent DPLL_ABE & DPLL_CORE from idling */
 	omap3_dpll_deny_idle(dpll_abe_ck);
@@ -714,8 +717,6 @@ int omap4_dpll_low_power_cascade_enter()
 		goto dpll_mpu_bypass_fail;
 	} else
 		pr_debug("%s: DPLL_MPU entered Low Power bypass\n", __func__);
-
-	omap4_lpmode = true;
 
 	/* bypass DPLL_IVA */
 	state.dpll_iva_ck_rate = dpll_iva_ck->rate;
