@@ -40,7 +40,8 @@
 
 static struct delayed_work	lpmode_work;
 
-bool omap4_lpmode = false;
+bool in_dpll_cascading = false;
+DEFINE_RWLOCK(dpll_cascading_lock);
 
 static struct clockdomain *l3_emif_clkdm;
 static struct clk *dpll_core_m2_ck, *dpll_core_m5x2_ck;
@@ -533,6 +534,46 @@ int omap4_dpll_low_power_cascade_check_entry()
 	return schedule_delayed_work_on(0, &lpmode_work, delay);
 }
 
+int dpll_cascading_blocker_hold(struct device *dev)
+{
+	unsigned long flags;
+	int num_blockers;
+
+	write_lock_irqsave(&dpll_cascading_lock, flags);
+	/* add_device_to_blocker_list
+	num_blockers = add_device_to_list(dev);
+	*/
+
+	if (num_blockers == 1) {
+		omap4_dpll_low_power_cascade_exit();
+		in_dpll_cascading = false;
+	}
+
+	write_unlock_irqrestore(&dpll_cascading_lock, flags);
+
+	return 0;
+}
+
+int dpll_cascading_blocker_release(struct device *dev)
+{
+	unsigned long flags;
+	int num_blockers;
+
+	write_lock_irqsave(&dpll_cascading_lock, flags);
+	/* remove device from blocker list
+	 * num_blockers = remove_device_from_list(dev);
+	 */
+
+	if (!num_blockers) {
+		in_dpll_cascading = true;
+		omap4_dpll_low_power_cascade_enter();
+	}
+
+	write_unlock_irqrestore(&dpll_cascading_lock, flags);
+
+	return 0;
+}
+
 /**
  * omap4_dpll_low_power_cascade - configure system for low power DPLL cascade
  *
@@ -608,8 +649,6 @@ int omap4_dpll_low_power_cascade_enter()
 		ret = -ENODEV;
 		goto out;
 	}
-
-	omap4_lpmode = true;
 
 	/* look up the three scalable voltage domains */
 	vdd_mpu = omap_voltage_domain_get("mpu");
@@ -785,7 +824,6 @@ dpll_iva_bypass_fail:
 				(1 << state.div_iva_hs_clk_div)));
 	clk_set_rate(dpll_iva_ck, state.dpll_iva_ck_rate);
 dpll_mpu_bypass_fail:
-	omap4_lpmode = false;
 	clk_set_rate(div_mpu_hs_clk, (div_mpu_hs_clk->parent->rate /
 				(1 << state.div_mpu_hs_clk_div)));
 	clk_set_rate(dpll_mpu_ck, state.dpll_mpu_ck_rate);
@@ -876,9 +914,6 @@ int omap4_dpll_low_power_cascade_exit()
 
 	if (delayed_work_pending(&lpmode_work))
 		cancel_delayed_work_sync(&lpmode_work);
-
-	if (!omap4_lpmode)
-		return 0;
 
 	/* look up the three scalable voltage domains */
 	vdd_mpu = omap_voltage_domain_get("mpu");
@@ -979,8 +1014,6 @@ int omap4_dpll_low_power_cascade_exit()
 	omap_smartreflex_enable(vdd_core);
 
 	recalculate_root_clocks();
-
-	omap4_lpmode = false;
 
 out:
 	return ret;
