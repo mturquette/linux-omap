@@ -216,14 +216,6 @@ static unsigned long compute_lpj(unsigned long ref, u_int div, u_int mult)
 static int omap4_mpu_set_rate(struct device *dev, unsigned long rate)
 {
 	int ret;
-	struct device *mpuss_dev;
-
-	mpuss_dev = omap2_get_mpuss_device();
-
-	if (rate > 300000000)
-		dpll_cascading_blocker_hold(mpuss_dev);
-	else
-		dpll_cascading_blocker_release(mpuss_dev);
 
 	ret = clk_set_rate(dpll_mpu_clk, rate);
 	if (ret) {
@@ -275,9 +267,6 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 {
 	u32 d_core_m3_rate, d_core_m6_rate, d_core_m7_rate;
 	u32 d_per_m3_rate, d_per_m6_rate;
-	struct device *l3_dev;
-
-	l3_dev = omap2_get_l3_device();
 
 	if (rate <= L3_OPP50_RATE) {
 		d_core_m3_rate = DPLL_CORE_M3_OPP50_RATE;
@@ -285,16 +274,12 @@ static int omap4_l3_set_rate(struct device *dev, unsigned long rate)
 		d_core_m7_rate = DPLL_CORE_M7_OPP50_RATE;
 		d_per_m3_rate = DPLL_PER_M3_OPP50_RATE;
 		d_per_m6_rate = DPLL_PER_M6_OPP50_RATE;
-
-		dpll_cascading_blocker_release(l3_dev);
 	} else {
 		d_core_m3_rate = DPLL_CORE_M3_OPP100_RATE;
 		d_core_m6_rate = DPLL_CORE_M6_OPP100_RATE;
 		d_core_m7_rate = DPLL_CORE_M7_OPP100_RATE;
 		d_per_m3_rate = DPLL_PER_M3_OPP100_RATE;
 		d_per_m6_rate = DPLL_PER_M6_OPP100_RATE;
-
-		dpll_cascading_blocker_hold(l3_dev);
 	}
 
 	clk_set_rate(core_m3_clk, d_core_m3_rate);
