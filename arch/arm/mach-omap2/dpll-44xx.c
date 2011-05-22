@@ -14,7 +14,7 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/clk.h>
-#include <linux/cpufreq.h>
+#include <linux/slab.h>
 
 #include <plat/common.h>
 #include <plat/clockdomain.h>
@@ -72,6 +72,13 @@ static struct dpll_cascade_saved_state {
 	unsigned int cpufreq_policy_cur_rate;
 	struct omap_opp *mpu_opp;
 } state;
+
+struct dpll_cascading_blocker {
+	struct device *dev;
+	struct list_head node;
+};
+
+struct list_head dpll_cascading_blocker_list;
 
 /**
  * omap4_core_dpll_m2_set_rate - set CORE DPLL M2 divider
@@ -536,42 +543,95 @@ int omap4_dpll_low_power_cascade_check_entry()
 
 int dpll_cascading_blocker_hold(struct device *dev)
 {
+	struct dpll_cascading_blocker *blocker;
 	unsigned long flags;
-	int num_blockers;
+	int list_was_empty = 0;
+	int ret = 0;
 
 	write_lock_irqsave(&dpll_cascading_lock, flags);
-	/* add_device_to_blocker_list
-	num_blockers = add_device_to_list(dev);
-	*/
 
-	if (num_blockers == 1) {
+	if (list_empty(&dpll_cascading_blocker_list))
+		list_was_empty = 1;
+
+	/* bail early if constraint for this device already exists */
+	list_for_each_entry(blocker, &dpll_cascading_blocker_list, node) {
+		if (blocker->dev == dev) {
+			pr_err("%s: already holding dpll cascading blocker\n",
+					__func__);
+			dump_stack();
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
+	/* add new member to list of devices blocking dpll cascading entry */
+	blocker = kzalloc(sizeof(struct dpll_cascading_blocker), GFP_KERNEL);
+	if (!blocker) {
+		pr_err("%s: Unable to creat a new blocker\n",
+				__func__);
+		ret = -ENOMEM;
+		goto out;
+	}
+	blocker->dev = dev;
+
+	list_add(&blocker->node, &dpll_cascading_blocker_list);
+
+	if (list_was_empty && in_dpll_cascading) {
 		omap4_dpll_low_power_cascade_exit();
 		in_dpll_cascading = false;
 	}
 
+out:
 	write_unlock_irqrestore(&dpll_cascading_lock, flags);
 
-	return 0;
+	return ret;
 }
 
 int dpll_cascading_blocker_release(struct device *dev)
 {
+	struct dpll_cascading_blocker *blocker;
 	unsigned long flags;
-	int num_blockers;
+	int ret = 0;
+	int found = 0;
 
 	write_lock_irqsave(&dpll_cascading_lock, flags);
-	/* remove device from blocker list
-	 * num_blockers = remove_device_from_list(dev);
-	 */
 
-	if (!num_blockers) {
+	/* bail early if list is empty */
+	if (list_empty(&dpll_cascading_blocker_list)) {
+		pr_err("%s: list already empty\n", __func__);
+		dump_stack();
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* find the list entry that matches the device */
+	list_for_each_entry(blocker, &dpll_cascading_blocker_list, node) {
+		if (blocker->dev == dev) {
+			found = 1;
+			break;
+		}
+	}
+
+	/* bail if constraint for this device does not exist */
+	if (!found) {
+		pr_err("%s: no blocker to release\n", __func__);
+		dump_stack();
+		ret = -EINVAL;
+		goto out;
+	}
+
+	list_del(&blocker->node);
+
+	if (list_empty(&dpll_cascading_blocker_list)
+			&& !in_dpll_cascading) {
 		in_dpll_cascading = true;
 		omap4_dpll_low_power_cascade_enter();
 	}
 
+out:
 	write_unlock_irqrestore(&dpll_cascading_lock, flags);
 
-	return 0;
+	return ret;
 }
 
 /**
