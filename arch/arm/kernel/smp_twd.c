@@ -18,9 +18,12 @@
 #include <linux/irq.h>
 #include <linux/io.h>
 #include <linux/cpufreq.h>
+#include <linux/clk.h>
 
 #include <asm/smp_twd.h>
 #include <asm/hardware/gic.h>
+
+#include <plat/clock.h>
 
 /* set up by the platform code */
 void __iomem *twd_base;
@@ -245,15 +248,45 @@ static struct notifier_block twd_cpufreq_notifier_block = {
 	.notifier_call  = twd_cpufreq_notifier
 };
 
+static int twd_clk_notifier(struct notifier_block *nb,
+		unsigned long val, void *data)
+{
+	struct clk_notifier_data *cnd = (struct clk_notifier_data *)data;
+
+	switch (val) {
+	case CLK_PRE_RATE_CHANGE:
+		break;
+	case CLK_POST_RATE_CHANGE:
+		twd_recalc_prescaler(0, cnd->new_rate);
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static struct notifier_block twd_clk_notifier_block = {
+	.notifier_call = twd_clk_notifier
+};
+
 static int __init twd_init_cpufreq(void)
 {
+	struct clk *dpll_mpu_ck;
+
 	if (!twd_timer_rate)
 		return 0;
 
+	dpll_mpu_ck = clk_get(NULL, "dpll_mpu_ck");
+
+	if (clk_notifier_register(dpll_mpu_ck, &twd_clk_notifier_block))
+		pr_err("%s: failed to setup clock notifier\n", __func__);
+#if 0
 	/* FIXME change this to be a clock fwk notifier instead of CPUfreq */
 	if (cpufreq_register_notifier(&twd_cpufreq_notifier_block,
 				      CPUFREQ_TRANSITION_NOTIFIER))
 		pr_err("smp_twd: Failed to setup cpufreq notifier\n");
+#endif
 
 	return 0;
 }
