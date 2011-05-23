@@ -231,7 +231,6 @@ static void sr_set_clk_length(struct omap_sr *sr)
 {
 	struct clk *sys_ck;
 	u32 sys_clk_speed;
-	unsigned long flags;
 
 	if (cpu_is_omap34xx()) {
 		sys_ck = clk_get(NULL, "sys_ck");
