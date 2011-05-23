@@ -78,7 +78,8 @@ struct dpll_cascading_blocker {
 	struct list_head node;
 };
 
-struct list_head dpll_cascading_blocker_list;
+//struct list_head dpll_cascading_blocker_list;
+LIST_HEAD(dpll_cascading_blocker_list);
 
 /**
  * omap4_core_dpll_m2_set_rate - set CORE DPLL M2 divider
@@ -550,15 +551,19 @@ int dpll_cascading_blocker_hold(struct device *dev)
 
 	write_lock_irqsave(&dpll_cascading_lock, flags);
 
-	if (list_empty(&dpll_cascading_blocker_list))
+	if (list_empty(&dpll_cascading_blocker_list)) {
 		list_was_empty = 1;
+		pr_err("%s: list was indeed empty\n", __func__);
+	} else {
+		pr_err("%s: list was NOT empty\n", __func__);
+	}
 
 	/* bail early if constraint for this device already exists */
 	list_for_each_entry(blocker, &dpll_cascading_blocker_list, node) {
 		if (blocker->dev == dev) {
 			pr_err("%s: already holding dpll cascading blocker\n",
 					__func__);
-			dump_stack();
+			//dump_stack();
 			ret = -EINVAL;
 			goto out;
 		}
@@ -599,7 +604,7 @@ int dpll_cascading_blocker_release(struct device *dev)
 	/* bail early if list is empty */
 	if (list_empty(&dpll_cascading_blocker_list)) {
 		pr_err("%s: list already empty\n", __func__);
-		dump_stack();
+		//dump_stack();
 		ret = -EINVAL;
 		goto out;
 	}
@@ -615,7 +620,7 @@ int dpll_cascading_blocker_release(struct device *dev)
 	/* bail if constraint for this device does not exist */
 	if (!found) {
 		pr_err("%s: no blocker to release\n", __func__);
-		dump_stack();
+		//dump_stack();
 		ret = -EINVAL;
 		goto out;
 	}

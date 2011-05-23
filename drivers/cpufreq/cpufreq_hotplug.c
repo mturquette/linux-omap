@@ -30,6 +30,10 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 
+/* dpll cascading hacks */
+#include <plat/common.h>
+#include <mach/omap4-common.h>
+
 /* greater than 80% avg load across online CPUs increases frequency */
 #define DEFAULT_UP_FREQ_MIN_LOAD			(80)
 
@@ -115,6 +119,9 @@ static struct dbs_tuners {
 	.io_is_busy =			0,
 	.boost_timeout = 0,
 };
+
+/* dpll casading hacks */
+struct device *mpuss_dev;
 
 /*
  * A corner case exists when switching io_is_busy at run-time: comparing idle
@@ -540,7 +547,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		/* should we enable auxillary CPUs? */
 		if (num_online_cpus() < 2 && hotplug_in_avg_load >
 				dbs_tuners_ins.up_threshold) {
-			//dpll_cascading_blocker_hold(mpu_dev);
 			cpu_up(1);
 			goto out;
 		}
@@ -549,9 +555,12 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* check for frequency increase based on max_load */
 	if (max_load > dbs_tuners_ins.up_threshold) {
 		/* increase to highest frequency supported */
-		if (policy->cur < policy->max)
+		if (policy->cur < policy->max) {
+			pr_err("%s: increase: %lu\n", __func__, policy->max);
+			dpll_cascading_blocker_hold(mpuss_dev);
 			__cpufreq_driver_target(policy, policy->max,
 					CPUFREQ_RELATION_H);
+		}
 
 		goto out;
 	}
@@ -560,11 +569,11 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	if (avg_load < dbs_tuners_ins.down_threshold) {
 		/* are we at the minimum frequency already? */
 		if (policy->cur == policy->min) {
+			dpll_cascading_blocker_release(mpuss_dev);
 			/* should we disable auxillary CPUs? */
 			if (num_online_cpus() > 1 && hotplug_out_avg_load <
 					dbs_tuners_ins.down_threshold) {
 				cpu_down(1);
-				//dpll_cascading_blocker_release(mpu_dev);
 			}
 			goto out;
 		}
@@ -585,6 +594,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (freq_next < policy->min)
 			freq_next = policy->min;
 
+		pr_err("%s: decrease: %lu\n", __func__, freq_next);
 		 __cpufreq_driver_target(policy, freq_next,
 					 CPUFREQ_RELATION_L);
 	}
@@ -774,6 +784,9 @@ static int __init cpufreq_gov_dbs_init(void)
 	err = cpufreq_register_governor(&cpufreq_gov_hotplug);
 	if (err)
 		destroy_workqueue(khotplug_wq);
+
+	/* dpll cascading hacks */
+	mpuss_dev = omap2_get_mpuss_device();
 
 	return err;
 }
