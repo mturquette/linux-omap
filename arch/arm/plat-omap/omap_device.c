@@ -894,7 +894,6 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 		read_lock_irqsave(&dpll_cascading_lock, flags);
 
 		if (in_dpll_cascading) {
-			pr_err("%s: HERE!\n", __func__);
 			ret = -EINVAL;
 			goto out;
 		}

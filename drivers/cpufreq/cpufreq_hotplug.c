@@ -540,7 +540,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		/* should we enable auxillary CPUs? */
 		if (num_online_cpus() < 2 && hotplug_in_avg_load >
 				dbs_tuners_ins.up_threshold) {
-			//dpll_cascading_blocker_hold(mpu_dev);
 			cpu_up(1);
 			goto out;
 		}
@@ -564,7 +563,6 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 			if (num_online_cpus() > 1 && hotplug_out_avg_load <
 					dbs_tuners_ins.down_threshold) {
 				cpu_down(1);
-				//dpll_cascading_blocker_release(mpu_dev);
 			}
 			goto out;
 		}
