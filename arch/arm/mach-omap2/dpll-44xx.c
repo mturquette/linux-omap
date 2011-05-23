@@ -78,7 +78,6 @@ struct dpll_cascading_blocker {
 	struct list_head node;
 };
 
-//struct list_head dpll_cascading_blocker_list;
 LIST_HEAD(dpll_cascading_blocker_list);
 
 /**
