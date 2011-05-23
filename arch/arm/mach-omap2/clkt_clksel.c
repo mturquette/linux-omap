@@ -190,7 +190,7 @@ static u32 _clksel_to_divisor(struct clk *clk, u32 field_val)
 
 	if (!clkr->div) {
 		/* This indicates a data error */
-		WARN(1, "clock: Could not find fieldval %d for clock %s parent "
+		pr_debug("clock: Could not find fieldval %d for clock %s parent "
 		     "%s\n", field_val, clk->name, clk->parent->name);
 		return 0;
 	}
