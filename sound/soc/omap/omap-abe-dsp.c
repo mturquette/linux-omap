@@ -48,6 +48,9 @@
 #include <plat/omap-pm.h>
 #include <plat/powerdomain.h>
 #include <plat/prcm.h>
+
+#include <mach/omap4-common.h>
+
 #include "../../../arch/arm/mach-omap2/pm.h"
 #include "../../../arch/arm/mach-omap2/cm-regbits-44xx.h"
 
@@ -413,7 +416,7 @@ static int abe_fe_event(struct snd_soc_dapm_widget *w,
 		abe->fe_active[index]++;
 		active = abe_fe_active_count(abe);
 		if (!abe->early_suspended || (active > 1) || !abe->fe_active[6])
-			ret = abe_exit_dpll_cascading(abe);
+			ret = dpll_cascading_blocker_hold(&abe->pdev->dev);
 	} else {
 		abe->fe_active[index]--;
 	}
@@ -2228,12 +2231,12 @@ static int aess_stream_event(struct snd_soc_dapm_context *dapm, int event)
 		 */
 		if (abe->early_suspended && (active == 1) &&
 		    abe->fe_active[6] && (abe->opp <= 50))
-			ret = abe_enter_dpll_cascading(abe);
+			ret = dpll_cascading_blocker_release(&pdev->dev);
 		else
-			ret = abe_exit_dpll_cascading(abe);
+			ret = dpll_cascading_blocker_hold(&pdev->dev);
 		break;
 	case SND_SOC_DAPM_STREAM_STOP:
-		ret = abe_exit_dpll_cascading(abe);
+		ret = dpll_cascading_blocker_hold(&pdev->dev);
 		break;
 	default:
 		break;
@@ -2298,7 +2301,7 @@ static void abe_early_suspend(struct early_suspend *handler)
 	 * - OPP is 50 or less (DL1 path only)
 	 */
 	if ((active == 1) && abe->fe_active[6] && (abe->opp <= 50))
-		abe_enter_dpll_cascading(abe);
+		dpll_cascading_blocker_release(&abe->pdev->dev);
 
 	abe->early_suspended = 1;
 }
@@ -2319,7 +2322,7 @@ static void abe_late_resume(struct early_suspend *handler)
 		OMAP4_CM_MPU_STATICDEP_OFFSET);
 
 	/* exit dpll cascading since screen will be turned on */
-	abe_exit_dpll_cascading(abe);
+	dpll_cascading_blocker_hold(&abe->pdev->dev);
 
 	abe->early_suspended = 0;
 }
