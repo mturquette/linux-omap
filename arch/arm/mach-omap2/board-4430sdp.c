@@ -422,6 +422,7 @@ static struct regulator_init_data sdp4430_vaux3 = {
 	.constraints = {
 		.min_uV			= 1000000,
 		.max_uV			= 3000000,
+		.always_on		= true,
 		.apply_uV		= true,
 		.valid_modes_mask	= REGULATOR_MODE_NORMAL
 					| REGULATOR_MODE_STANDBY,
