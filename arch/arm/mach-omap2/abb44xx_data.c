@@ -17,11 +17,16 @@ static const struct omap_abb_ops omap44xx_abb_ops = {
 	.clear_tranxdone	= omap44xx_prm_abb_clear_tranxdone,
 };
 
-static const struct omap_abb_common omap44xx_abb_common = {
+static const struct omap_abb_common omap4_abb_common = {
 	.opp_sel_mask		= OMAP4430_OPP_SEL_MASK,
 	.opp_sel_shift		= OMAP4430_OPP_SEL_SHIFT,
 	.opp_change_mask	= OMAP4430_OPP_CHANGE_MASK,
 	.ops			= &omap44xx_abb_opps,
+
+	.sr2en_shift		= 0x1,
+	.active_fbb_sel_shift	= 0x2,
+	.sr2_wtcnt_value_mask	= 0xff,
+	.sr2_wtcnt_value_shift	= 0x8,
 };
 
 struct omap_abb_instance omap44xx_abb_mpu = {
@@ -30,6 +35,7 @@ struct omap_abb_instance omap44xx_abb_mpu = {
 	.irqstatus_mpu_offs	= OMAP4_PRM_IRQSTATUS_MPU_2_OFFSET,
 	.done_st_shift		= OMAP4430_ABB_MPU_DONE_ST_SHIFT,
 	.done_st_mask		= OMAP4430_ABB_MPU_DONE_ST_MASK,
+	.common			= &omap4_abb_common,
 };
 
 struct omap_abb_instance omap44xx_iva_mpu = {
@@ -38,4 +44,5 @@ struct omap_abb_instance omap44xx_iva_mpu = {
 	.irqstatus_mpu_offs	= OMAP4_PRM_IRQSTATUS_MPU_OFFSET,
 	.done_st_shift		= OMAP4430_ABB_IVA_DONE_ST_SHIFT,
 	.done_st_mask		= OMAP4430_ABB_IVA_DONE_ST_MASK,
+	.common			= &omap4_abb_common,
 };
