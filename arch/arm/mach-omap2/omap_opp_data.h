@@ -80,7 +80,8 @@ struct omap_opp_def {
 	.volt_nominal	= _v_nom,				       \
 	.sr_efuse_offs	= _efuse_offs,				       \
 	.sr_errminlimit = _errminlimit,				       \
-	.vp_errgain	= _errgain				       \
+	.vp_errgain	= _errgain,				       \
+	.abb_type	= _abb_type				       \
 }
 
 /* Use this to initialize the default table */
