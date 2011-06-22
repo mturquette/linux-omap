@@ -9,8 +9,9 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/kernel.h>
+//#include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/delay.h>
 
 #include "abb.h"
 #include "voltage.h"
@@ -77,6 +78,9 @@ void omap_abb_enable(struct voltagedomain *voltdm)
 {
 	struct omap_abb_instance *abb = voltdm->abb;
 
+	if (abb->enabled)
+		return;
+
 	voltdm->rmw(abb->common->sr2en_mask, abb->common->sr2en_mask,
 			abb->setup_offs);
 }
@@ -85,6 +89,9 @@ void omap_abb_enable(struct voltagedomain *voltdm)
 void omap_abb_disable(struct voltagedomain *voltdm)
 {
 	struct omap_abb_instance *abb = voltdm->abb;
+
+	if (!abb->enabled)
+		return;
 
 	voltdm->rmw(abb->common->sr2en_mask, (0 << abb->common->sr2en_shift),
 			abb->setup_offs);
@@ -98,7 +105,7 @@ void __init omap_abb_init(struct voltagedomain *voltdm)
 	u32 sr2_wt_cnt_val;
 
 	if(IS_ERR_OR_NULL(abb))
-		return -EINVAL;
+		return;
 
 	sys_clk_rate = voltdm->sys_clk.rate / 1000;
 	pr_err("%s: sys_clk_rate is %lu\n", __func__, sys_clk_rate);
@@ -118,5 +125,5 @@ void __init omap_abb_init(struct voltagedomain *voltdm)
 	/* enable the ldo */
 	omap_abb_enable(voltdm);
 
-	return 0;
+	return;
 }
