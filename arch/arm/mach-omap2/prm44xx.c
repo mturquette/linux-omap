@@ -264,3 +264,19 @@ u32 omap4_prm_vcvp_rmw(u32 mask, u32 bits, u8 offset)
 					       OMAP4430_PRM_DEVICE_INST,
 					       offset);
 }
+
+u32 omap4_prm_abb_check_txdone(u32 mask, u16 reg)
+{
+	u32 irqstatus;
+
+	irqstatus = omap4_prminst_read_inst_reg(OMAP4430_PRM_PARTITION,
+						OMAP4430_PRM_OCP_SOCKET_INST,
+						reg);
+	return irqstatus & abb->done_st_mask;
+}
+
+void omap4_prm_abb_clear_tranxdone(u32 bits, u16 reg)
+{
+	omap4_prm_clear_inst_reg_bits(bits, OMAP4430_PRM_OCP_SOCKET_INST,
+			offset);
+}
