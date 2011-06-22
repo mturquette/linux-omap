@@ -10,25 +10,25 @@
  */
 
 #include "abb.h"
+#include "prm44xx.h"
 #include "prm-regbits-44xx.h"
 
-static const struct omap_abb_ops omap44xx_abb_ops = {
-	.check_tranxdone	= omap44xx_prm_abb_check_tranxdone,
-	.clear_tranxdone	= omap44xx_prm_abb_clear_tranxdone,
+static const struct omap_abb_ops omap4_abb_ops = {
+	.check_tranxdone	= &omap4_prm_abb_check_tranxdone,
+	.clear_tranxdone	= &omap4_prm_abb_clear_tranxdone,
 };
 
 static const struct omap_abb_common omap4_abb_common = {
 	.opp_sel_mask		= OMAP4430_OPP_SEL_MASK,
 	.opp_sel_shift		= OMAP4430_OPP_SEL_SHIFT,
 	.opp_change_mask	= OMAP4430_OPP_CHANGE_MASK,
-	.ops			= &omap44xx_abb_opps,
-
 	.sr2en_mask		= OMAP4430_SR2EN_MASK,
 	.sr2en_shift		= OMAP4430_SR2EN_SHIFT,
 	.active_fbb_sel_mask	= OMAP4430_ACTIVE_FBB_SEL_MASK,
 	.active_fbb_sel_shift	= OMAP4430_ACTIVE_FBB_SEL_SHIFT,
-	.sr2_wtcnt_value_mask	= 0xff,
-	.sr2_wtcnt_value_shift	= 0x8,
+	.sr2_wtcnt_value_mask	= OMAP4430_SR2_WTCNT_VALUE_MASK,
+	.sr2_wtcnt_value_shift	= OMAP4430_SR2_WTCNT_VALUE_SHIFT,
+	.ops			= &omap4_abb_ops,
 };
 
 struct omap_abb_instance omap4_abb_mpu = {
@@ -40,7 +40,7 @@ struct omap_abb_instance omap4_abb_mpu = {
 	.common			= &omap4_abb_common,
 };
 
-struct omap_abb_instance omap4_iva_mpu = {
+struct omap_abb_instance omap4_abb_iva = {
 	.setup_offs		= OMAP4_PRM_LDO_ABB_IVA_SETUP_OFFSET,
 	.ctrl_offs		= OMAP4_PRM_LDO_ABB_IVA_CTRL_OFFSET,
 	.irqstatus_mpu_offs	= OMAP4_PRM_IRQSTATUS_MPU_OFFSET,
