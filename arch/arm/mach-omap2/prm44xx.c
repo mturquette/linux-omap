@@ -277,5 +277,8 @@ u32 omap4_prm_abb_check_tranxdone(u32 mask, u16 reg)
 
 void omap4_prm_abb_clear_tranxdone(u32 bits, u16 reg)
 {
-	omap4_prm_clear_inst_reg_bits(bits, OMAP4430_PRM_OCP_SOCKET_INST, reg);
+	return omap4_prminst_rmw_inst_reg_bits(bits, bits,
+					       OMAP4430_PRM_PARTITION,
+					       OMAP4430_PRM_OCP_SOCKET_INST,
+					       reg);
 }
