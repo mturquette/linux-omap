@@ -81,6 +81,8 @@ void omap_abb_enable(struct voltagedomain *voltdm)
 	if (abb->enabled)
 		return;
 
+	abb->enabled = true;
+
 	voltdm->rmw(abb->common->sr2en_mask, abb->common->sr2en_mask,
 			abb->setup_offs);
 }
@@ -92,6 +94,8 @@ void omap_abb_disable(struct voltagedomain *voltdm)
 
 	if (!abb->enabled)
 		return;
+
+	abb->enabled = false;
 
 	voltdm->rmw(abb->common->sr2en_mask, (0 << abb->common->sr2en_shift),
 			abb->setup_offs);
