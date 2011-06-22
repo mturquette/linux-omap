@@ -23,13 +23,15 @@ static const struct omap_abb_common omap4_abb_common = {
 	.opp_change_mask	= OMAP4430_OPP_CHANGE_MASK,
 	.ops			= &omap44xx_abb_opps,
 
-	.sr2en_shift		= 0x1,
-	.active_fbb_sel_shift	= 0x2,
+	.sr2en_mask		= OMAP4430_SR2EN_MASK,
+	.sr2en_shift		= OMAP4430_SR2EN_SHIFT,
+	.active_fbb_sel_mask	= OMAP4430_ACTIVE_FBB_SEL_MASK,
+	.active_fbb_sel_shift	= OMAP4430_ACTIVE_FBB_SEL_SHIFT,
 	.sr2_wtcnt_value_mask	= 0xff,
 	.sr2_wtcnt_value_shift	= 0x8,
 };
 
-struct omap_abb_instance omap44xx_abb_mpu = {
+struct omap_abb_instance omap4_abb_mpu = {
 	.setup_offs		= OMAP4_PRM_LDO_ABB_MPU_SETUP_OFFSET,
 	.ctrl_offs		= OMAP4_PRM_LDO_ABB_MPU_CTRL_OFFSET,
 	.irqstatus_mpu_offs	= OMAP4_PRM_IRQSTATUS_MPU_2_OFFSET,
@@ -38,7 +40,7 @@ struct omap_abb_instance omap44xx_abb_mpu = {
 	.common			= &omap4_abb_common,
 };
 
-struct omap_abb_instance omap44xx_iva_mpu = {
+struct omap_abb_instance omap4_iva_mpu = {
 	.setup_offs		= OMAP4_PRM_LDO_ABB_IVA_SETUP_OFFSET,
 	.ctrl_offs		= OMAP4_PRM_LDO_ABB_IVA_CTRL_OFFSET,
 	.irqstatus_mpu_offs	= OMAP4_PRM_IRQSTATUS_MPU_OFFSET,
