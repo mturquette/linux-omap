@@ -74,7 +74,6 @@ static struct voltagedomain omap4_voltdm_iva = {
 	.vc = &omap4_vc_iva,
 	.vfsm = &omap4_vdd_iva_vfsm,
 	.vp = &omap4_vp_iva,
-	.abb = &omap4_abb_iva,
 	.vdd = &omap4_vdd_iva_info,
 };
 
