@@ -114,7 +114,8 @@ void __init omap_abb_init(struct voltagedomain *voltdm)
 	sys_clk_rate = voltdm->sys_clk.rate / 1000;
 	pr_err("%s: sys_clk_rate is %lu\n", __func__, sys_clk_rate);
 
-	sr2_wt_cnt_val = DIV_ROUND_UP(sys_clk_rate, 16000000);
+	//sr2_wt_cnt_val = DIV_ROUND_UP(sys_clk_rate, 16000000);
+	sr2_wt_cnt_val = 0x78;
 	pr_err("%s: sr2_wt_cnt_val is %lu\n", __func__, sr2_wt_cnt_val);
 
 	voltdm->rmw(abb->common->sr2_wtcnt_value_mask,
