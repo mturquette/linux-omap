@@ -105,18 +105,37 @@ void omap_abb_disable(struct voltagedomain *voltdm)
 void __init omap_abb_init(struct voltagedomain *voltdm)
 {
 	struct omap_abb_instance *abb = voltdm->abb;
-	unsigned long sys_clk_rate;
+	u32 sys_clk_rate;
 	u32 sr2_wt_cnt_val;
+	u32 cycle_rate;
+	u32 settling_time;
 
 	if(IS_ERR_OR_NULL(abb))
 		return;
 
-	sys_clk_rate = voltdm->sys_clk.rate / 1000;
-	pr_err("%s: sys_clk_rate is %lu\n", __func__, sys_clk_rate);
+	/*
+	 * SR2_WTCNT_VALUE must be programmed with the expected settling time
+	 * for ABB ldo transition.  This value depends on the cycle rate for
+	 * the ABB IP (varies per OMAP family), and the system clock frequency
+	 * (varies per board).  The formula is:
+	 *
+	 * SR2_WTCNT_VALUE = SettlingTime / (CycleRate / SystemClkRate))
+	 * where SettlingTime is in micro-seconds and SystemClkRate is in MHz.
+	 *
+	 * To avoid dividing by zero multiply both CycleRate and SettlingTime
+	 * by 10 such that the final result is the one we want.
+	 */
 
-	//sr2_wt_cnt_val = DIV_ROUND_UP(sys_clk_rate, 16000000);
-	sr2_wt_cnt_val = 0x78;
-	pr_err("%s: sr2_wt_cnt_val is %lu\n", __func__, sr2_wt_cnt_val);
+	/* convert SYS_CLK rate to MHz & prevent divide by zero */
+	sys_clk_rate = DIV_ROUND_CLOSEST(voltdm->sys_clk.rate, 1000000);
+	cycle_rate = abb->common->cycle_rate * 10;
+	settling_time = abb->common->settling_time * 10;
+
+	/* calculate cycle rate */
+	cycle_rate = DIV_ROUND_CLOSEST(cycle_rate, sys_clk_rate);
+
+	/* calulate SR2_WTCNT_VALUE */
+	sr2_wt_cnt_val = DIV_ROUND_CLOSEST(settling_time, cycle_rate);
 
 	voltdm->rmw(abb->common->sr2_wtcnt_value_mask,
 			(sr2_wt_cnt_val << abb->common->sr2_wtcnt_value_shift),
