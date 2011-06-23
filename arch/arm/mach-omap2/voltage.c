@@ -40,6 +40,7 @@
 
 #include "vc.h"
 #include "vp.h"
+#include "abb.h"
 
 static LIST_HEAD(voltdm_list);
 
