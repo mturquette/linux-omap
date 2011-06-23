@@ -28,6 +28,8 @@ static const struct omap_abb_common omap4_abb_common = {
 	.active_fbb_sel_shift	= OMAP4430_ACTIVE_FBB_SEL_SHIFT,
 	.sr2_wtcnt_value_mask	= OMAP4430_SR2_WTCNT_VALUE_MASK,
 	.sr2_wtcnt_value_shift	= OMAP4430_SR2_WTCNT_VALUE_SHIFT,
+	.settling_time		= 50,
+	.cycle_rate		= 16,
 	.ops			= &omap4_abb_ops,
 };
 
