@@ -36,6 +36,8 @@ struct omap_abb_common {
 	u8 sr2en_shift;
 	u8 active_fbb_sel_shift;
 	u8 sr2_wtcnt_value_shift;
+	unsigned long settling_time;
+	unsigned long cycle_rate;
 	const struct omap_abb_ops *ops;
 };
 
