@@ -57,6 +57,8 @@ static const struct omap_abb_common omap36xx_abb_common = {
 	.opp_sel_mask		= OMAP3630_OPP_SEL_MASK,
 	.opp_sel_shift		= OMAP3630_OPP_SEL_SHIFT,
 	.opp_change_mask	= OMAP3630_OPP_CHANGE_MASK,
+	.settling_time		= 30,
+	.cycl_rate		= 8,
 	.ops			= &omap36xx_abb_opps,
 };
 
