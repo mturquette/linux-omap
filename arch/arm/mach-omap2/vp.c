@@ -126,15 +126,19 @@ int omap_vp_forceupdate_scale(struct voltagedomain *voltdm,
 	struct omap_volt_data *curr_volt_data, *target_volt_data;
 	u32 vpconfig;
 	u8 target_vsel, current_vsel;
-	u8 curr_abb_type, target_abb_type;
+	u8 curr_abb_type = 0, target_abb_type = 0;
 	int ret, timeout = 0;
 
 	/* get per-voltage ABB data */
 	curr_volt_data = omap_voltage_get_voltdata(voltdm, voltdm->curr_volt);
 	target_volt_data = omap_voltage_get_voltdata(voltdm, target_volt);
 
-	curr_abb_type = curr_volt_data->abb_type;
-	target_abb_type = target_volt_data->abb_type;
+	/* voltdm->curr_volt is always zero at boot-time */
+	if (!IS_ERR_OR_NULL(curr_volt_data)
+			&& !IS_ERR_OR_NULL(target_volt_data)) {
+		curr_abb_type = curr_volt_data->abb_type;
+		target_abb_type = target_volt_data->abb_type;
+	}
 
 	/* bypass ABB ldo */
 	if (target_abb_type < curr_abb_type)
