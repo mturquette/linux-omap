@@ -5,6 +5,7 @@
 
 #include "voltage.h"
 #include "vp.h"
+#include "abb.h"
 #include "prm-regbits-34xx.h"
 #include "prm-regbits-44xx.h"
 #include "prm44xx.h"
@@ -124,7 +125,7 @@ int omap_vp_forceupdate_scale(struct voltagedomain *voltdm,
 	struct omap_vp_instance *vp = voltdm->vp;
 	u32 vpconfig;
 	u8 target_vsel, current_vsel;
-	int ret, timeout = 0;
+	int ret = 0, timeout = 0;
 
 	ret = omap_vc_pre_scale(voltdm, target_volt, &target_vsel, &current_vsel);
 	if (ret)
@@ -202,7 +203,11 @@ int omap_vp_forceupdate_scale(struct voltagedomain *voltdm,
 	vpconfig &= ~vp->common->vpconfig_forceupdate;
 	voltdm->write(vpconfig, vp->vpconfig);
 
-	return 0;
+	/* transition Adaptive Body-Bias LDO */
+	if (voltdm->abb)
+		ret = omap_abb_set_opp(voltdm);
+
+	return ret;
 }
 
 /**
