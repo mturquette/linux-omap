@@ -6,6 +6,7 @@
 
 #include "voltage.h"
 #include "vc.h"
+#include "abb.h"
 #include "prm-regbits-34xx.h"
 #include "prm-regbits-44xx.h"
 #include "prm44xx.h"
@@ -200,7 +201,7 @@ int omap_vc_bypass_scale_voltage(struct voltagedomain *voltdm,
 {
 	struct omap_vc_channel *vc;
 	u8 target_vsel, current_vsel;
-	int ret;
+	int ret = 0;
 
 	if (IS_ERR_OR_NULL(voltdm)) {
 		pr_err("%s bad voldm\n", __func__);
@@ -224,7 +225,12 @@ int omap_vc_bypass_scale_voltage(struct voltagedomain *voltdm,
 		return ret;
 
 	omap_vc_post_scale(voltdm, target_volt, target_vsel, current_vsel);
-	return 0;
+
+	/* transition Adaptive Body-Bias LDO */
+	if (voltdm->abb)
+		ret = omap_abb_set_opp(voltdm);
+
+	return ret;
 }
 
 /**
