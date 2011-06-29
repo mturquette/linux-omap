@@ -26,6 +26,7 @@
 #include "voltage.h"
 #include "vc.h"
 #include "vp.h"
+#include "abb.h"
 
 /*
  * VDD data
@@ -96,6 +97,8 @@ void __init omap3xxx_voltagedomains_init(void)
 	if (cpu_is_omap3630()) {
 		omap3_vdd1_info.volt_data = omap36xx_vddmpu_volt_data;
 		omap3_vdd2_info.volt_data = omap36xx_vddcore_volt_data;
+
+		omap3_voltdm_mpu.abb = &omap36xx_abb_mpu;
 	} else {
 		omap3_vdd1_info.volt_data = omap34xx_vddmpu_volt_data;
 		omap3_vdd2_info.volt_data = omap34xx_vddcore_volt_data;
