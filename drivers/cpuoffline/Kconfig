@@ -1,0 +1,13 @@
+config CPU_OFFLINE
+	bool "CPUoffline framework"
+	help
+	  CPUoffline provides a framework that allows for taking CPUs
+	  offline via an in-kernel governor.  The governor itself can
+	  implement any number of policies for deciding to offline a
+	  core.  Though primarily used for power capping, CPUoffline can
+	  also be used to implement a thermal duty to prevent core
+	  over-heating, etc.
+
+	  For details please see <file:Documentation/cpuoffline>.
+
+	  If in doubt, say N.
