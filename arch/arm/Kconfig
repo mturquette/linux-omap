@@ -1393,6 +1393,14 @@ config HOTPLUG_CPU
 	  Say Y here to experiment with turning CPUs off and on.  CPUs
 	  can be controlled through /sys/devices/system/cpu.
 
+config HOTPLUG_CPU_MASTER
+	bool "Prevent first CPU (master) from hotplugging"
+	depends on HOTPLUG_CPU
+	help
+	  Say Y here if your platform treats the first CPU as a special
+	  "master" CPU and cannot allow it to hotplug.  This prevents the
+	  "online" entry in sysfs for that CPU.
+
 config LOCAL_TIMERS
 	bool "Use local timer interrupts"
 	depends on SMP

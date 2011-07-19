@@ -940,7 +940,12 @@ static int __init topology_init(void)
 
 	for_each_possible_cpu(cpu) {
 		struct cpuinfo_arm *cpuinfo = &per_cpu(cpu_data, cpu);
+#ifdef CONFIG_HOTPLUG_CPU_MASTER
+		if (cpu)
+			cpuinfo->cpu.hotpluggable = 1;
+#else
 		cpuinfo->cpu.hotpluggable = 1;
+#endif
 		register_cpu(&cpuinfo->cpu, cpu);
 	}
 
