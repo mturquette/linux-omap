@@ -536,6 +536,11 @@ static DECLARE_BITMAP(cpu_possible_bits, CONFIG_NR_CPUS) __read_mostly;
 const struct cpumask *const cpu_possible_mask = to_cpumask(cpu_possible_bits);
 EXPORT_SYMBOL(cpu_possible_mask);
 
+static DECLARE_BITMAP(cpu_hotpluggable_bits, CONFIG_NR_CPUS) __read_mostly;
+const struct cpumask *const cpu_hotpluggable_mask =
+					to_cpumask(cpu_hotpluggable_bits);
+EXPORT_SYMBOL(cpu_hotpluggable_mask);
+
 static DECLARE_BITMAP(cpu_online_bits, CONFIG_NR_CPUS) __read_mostly;
 const struct cpumask *const cpu_online_mask = to_cpumask(cpu_online_bits);
 EXPORT_SYMBOL(cpu_online_mask);
@@ -554,6 +559,14 @@ void set_cpu_possible(unsigned int cpu, bool possible)
 		cpumask_set_cpu(cpu, to_cpumask(cpu_possible_bits));
 	else
 		cpumask_clear_cpu(cpu, to_cpumask(cpu_possible_bits));
+}
+
+void set_cpu_hotpluggable(unsigned int cpu, bool hotpluggable)
+{
+	if (hotpluggable)
+		cpumask_set_cpu(cpu, to_cpumask(cpu_hotpluggable_bits));
+	else
+		cpumask_clear_cpu(cpu, to_cpumask(cpu_hotpluggable_bits));
 }
 
 void set_cpu_present(unsigned int cpu, bool present)
@@ -588,6 +601,11 @@ void init_cpu_present(const struct cpumask *src)
 void init_cpu_possible(const struct cpumask *src)
 {
 	cpumask_copy(to_cpumask(cpu_possible_bits), src);
+}
+
+void init_cpu_hotpluggable(const struct cpumask *src)
+{
+	cpumask_copy(to_cpumask(cpu_hotpluggable_bits), src);
 }
 
 void init_cpu_online(const struct cpumask *src)
