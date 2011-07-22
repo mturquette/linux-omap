@@ -39,10 +39,11 @@ extern int nr_cpu_ids;
  * The following particular system cpumasks and operations manage
  * possible, present, active and online cpus.
  *
- *     cpu_possible_mask- has bit 'cpu' set iff cpu is populatable
- *     cpu_present_mask - has bit 'cpu' set iff cpu is populated
- *     cpu_online_mask  - has bit 'cpu' set iff cpu available to scheduler
- *     cpu_active_mask  - has bit 'cpu' set iff cpu available to migration
+ *     cpu_possible_mask     - has bit 'cpu' set iff cpu is populatable
+ *     cpu_hotpluggable_mask - has bit 'cpu' set iff cpu is hotpluggable
+ *     cpu_present_mask      - has bit 'cpu' set iff cpu is populated
+ *     cpu_online_mask       - has bit 'cpu' set iff cpu available to scheduler
+ *     cpu_active_mask       - has bit 'cpu' set iff cpu available to migration
  *
  *  If !CONFIG_HOTPLUG_CPU, present == possible, and active == online.
  *
@@ -51,7 +52,11 @@ extern int nr_cpu_ids;
  *  life of that system boot.  The cpu_present_mask is dynamic(*),
  *  representing which CPUs are currently plugged in.  And
  *  cpu_online_mask is the dynamic subset of cpu_present_mask,
- *  indicating those CPUs available for scheduling.
+ *  indicating those CPUs available for scheduling.  The
+ *  cpu_hotpluggable_mask is also fixed at boot time, as the set of CPU
+ *  id's which are possible AND can hotplug.  Cleared bits in this mask
+ *  mean that either the CPU is not possible, or it is possible but does
+ *  not support CPU hotplug operations.
  *
  *  If HOTPLUG is enabled, then cpu_possible_mask is forced to have
  *  all NR_CPUS bits set, otherwise it is just the set of CPUs that
@@ -60,6 +65,9 @@ extern int nr_cpu_ids;
  *  If HOTPLUG is enabled, then cpu_present_mask varies dynamically,
  *  depending on what ACPI reports as currently plugged in, otherwise
  *  cpu_present_mask is just a copy of cpu_possible_mask.
+ *
+ *  If CONFIG_HOTPLUG_CPU is enabled, then cpu_hotpluggable_mask matches
+ *  the description above, otherwise it is the empty set.
  *
  *  (*) Well, cpu_present_mask is dynamic in the hotplug case.  If not
  *      hotplug, it's a copy of cpu_possible_mask, hence fixed at boot.
@@ -76,6 +84,7 @@ extern int nr_cpu_ids;
  */
 
 extern const struct cpumask *const cpu_possible_mask;
+extern const struct cpumask *const cpu_hotpluggable_mask;
 extern const struct cpumask *const cpu_online_mask;
 extern const struct cpumask *const cpu_present_mask;
 extern const struct cpumask *const cpu_active_mask;
@@ -85,19 +94,23 @@ extern const struct cpumask *const cpu_active_mask;
 #define num_possible_cpus()	cpumask_weight(cpu_possible_mask)
 #define num_present_cpus()	cpumask_weight(cpu_present_mask)
 #define num_active_cpus()	cpumask_weight(cpu_active_mask)
+#define num_hotpluggable_cpus()	cpumask_weight(cpu_hotpluggable_mask)
 #define cpu_online(cpu)		cpumask_test_cpu((cpu), cpu_online_mask)
 #define cpu_possible(cpu)	cpumask_test_cpu((cpu), cpu_possible_mask)
 #define cpu_present(cpu)	cpumask_test_cpu((cpu), cpu_present_mask)
 #define cpu_active(cpu)		cpumask_test_cpu((cpu), cpu_active_mask)
+#define cpu_hotpluggable(cpu)	cpumask_test_cpu((cpu, cpu_hotpluggable_mask)
 #else
 #define num_online_cpus()	1U
 #define num_possible_cpus()	1U
 #define num_present_cpus()	1U
 #define num_active_cpus()	1U
+#define num_hotpluggable_cpus()	0
 #define cpu_online(cpu)		((cpu) == 0)
 #define cpu_possible(cpu)	((cpu) == 0)
 #define cpu_present(cpu)	((cpu) == 0)
 #define cpu_active(cpu)		((cpu) == 0)
+#define cpu_hotpluggable(cpu)	0
 #endif
 
 /* verify cpu argument to cpumask_* operators */
@@ -678,16 +691,20 @@ extern const DECLARE_BITMAP(cpu_all_bits, NR_CPUS);
 #define cpu_none_mask to_cpumask(cpu_bit_bitmap[0])
 
 #define for_each_possible_cpu(cpu) for_each_cpu((cpu), cpu_possible_mask)
+#define for_each_hotpluggable_cpu(cpu) \
+				   for_each_cpu((cpu), cpu_hotpluggable_mask)
 #define for_each_online_cpu(cpu)   for_each_cpu((cpu), cpu_online_mask)
 #define for_each_present_cpu(cpu)  for_each_cpu((cpu), cpu_present_mask)
 
 /* Wrappers for arch boot code to manipulate normally-constant masks */
 void set_cpu_possible(unsigned int cpu, bool possible);
+void set_cpu_hotpluggable(unsigned int cpu, bool hotpluggable);
 void set_cpu_present(unsigned int cpu, bool present);
 void set_cpu_online(unsigned int cpu, bool online);
 void set_cpu_active(unsigned int cpu, bool active);
 void init_cpu_present(const struct cpumask *src);
 void init_cpu_possible(const struct cpumask *src);
+void init_cpu_hotpluggable(const struct cpumask *src);
 void init_cpu_online(const struct cpumask *src);
 
 /**
