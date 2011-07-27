@@ -12,6 +12,13 @@
 #include <linux/mutex.h>
 #include <linux/cpuoffline.h>
 #include <linux/slab.h>
+//#include <linux/kobject.h>
+#include <linux/sysfs.h>
+//#include <linux/err.h>
+
+#define MAX_NAME_LEN	16
+
+static int nr_partitions = 0;
 
 DEFINE_MUTEX(cpuoffline_mutex);
 
@@ -20,14 +27,206 @@ DEFINE_PER_CPU(int, cpuoffline_can_offline);
 
 struct cpuoffline_driver *cpuoffline_driver;
 struct kobject *cpuoffline_global_kobject;
+/*
+ * XXX is the below necessary ?
 EXPORT_SYMBOL(cpuoffline_global_kobject);
+*/
+
+/* sysfs interfaces */
+
+static ssize_t current_governor_show(struct cpuoffline_partition *partition,
+		char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, partition->gov_string);
+}
+
+static ssize_t current_governor_store(struct cpuoffline_partition *partition,
+		const char *buf, size_t count)
+{
+	int ret;
+	//char gov_string[16];
+
+	ret = sscanf(buf, "%15s", partition->gov_string);
+
+	if (ret != 1)
+		return -EINVAL;
+
+	return count;
+}
+
+static ssize_t available_governors_show(struct cpuoffline_partition *partition,
+		char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "available guvnas\n");
+}
+
+/*
+ * XXX what is the difference between partition_show below and
+ * current_governor_show above?
+ */
+static ssize_t partition_show(struct kobject *kobj, struct attribute *attr,
+		char *buf)
+{
+	struct cpuoffline_partition *partition;
+	struct cpuoffline_attribute *c_attr;
+	ssize_t ret = -EINVAL;
+
+	mutex_lock(&cpuoffline_mutex);
+	partition = container_of(kobj, struct cpuoffline_partition, kobj);
+	c_attr = container_of(attr, struct cpuoffline_attribute, attr);
+
+	if (!partition || !c_attr)
+		goto out;
+
+	/* refcount++ */
+	kobject_get(&partition->kobj);
+
+	/* kobject should support per-object show/store function pointers... */
+	if (c_attr->show)
+		ret = c_attr->show(partition, buf);
+	else
+		ret = -EIO;
+
+	/* refcount-- */
+	kobject_put(&partition->kobj);
+
+out:
+	mutex_unlock(&cpuoffline_mutex);
+	return ret;
+}
+
+static ssize_t partition_store(struct kobject *kobj, struct attribute *attr,
+		const char *buf, size_t count)
+{
+	struct cpuoffline_partition *partition;
+	struct cpuoffline_attribute *c_attr;
+	ssize_t ret = -EINVAL;
+
+	mutex_lock(&cpuoffline_mutex);
+	partition = container_of(kobj, struct cpuoffline_partition, kobj);
+	c_attr = container_of(attr, struct cpuoffline_attribute, attr);
+
+	if (!partition || !c_attr)
+		goto out;
+
+	/* refcount++ */
+	kobject_get(&partition->kobj);
+
+	/* kobject should support per-object show/store function pointers... */
+	if(c_attr->store)
+		ret = c_attr->store(partition, buf, count);
+	else
+		ret = -EIO;
+
+	/* refcount-- */
+	kobject_put(&partition->kobj);
+
+out:
+	mutex_unlock(&cpuoffline_mutex);
+	return ret;
+}
+
+/* XXX ok, these perhaps do not need to be in an array... */
+/*static struct cpuoffline_attribute partition_default_attrs[] = {
+	__ATTR(current_governor, (S_IRUGO | S_IWUSR), current_governor_show,
+			current_governor_store),
+	__ATTR_RO(available_governors),
+};*/
+
+static struct cpuoffline_attribute current_governor =
+	__ATTR(current_governor, (S_IRUGO | S_IWUSR), current_governor_show,
+			current_governor_store);
+
+static struct cpuoffline_attribute available_governors =
+	__ATTR_RO(available_governors);
+
+static struct attribute *partition_default_attrs[] = {
+	&current_governor.attr,
+	&available_governors.attr,
+	NULL,
+};
+
+/*static struct attribute *partition_default_attrs[] = {
+	&current_governor,
+	&available_governors,
+	NULL,
+};*/
+
+#if 0
+static struct attribute *device_default_attrs[] = {
+	&statistics1,
+	&statistics2,
+	NULL,
+};
+#endif
+
+/*
+ * XXX can I use some default ops instead of this?
+ * No need for customer show/store if locking is not a concern...
+ */
+
+static const struct sysfs_ops partition_ops = {
+	.show	= partition_show,
+	.store	= partition_store,
+};
+
+static void cpuoffline_partition_release(struct kobject *kobj)
+{
+	struct cpuoffline_partition *partition;
+
+	partition = container_of(kobj, struct cpuoffline_partition, kobj);
+
+	pr_err("%s: releasing kobj for partition\n", __func__);
+
+	complete(&partition->kobj_unregister);
+}
+
+static struct kobj_type partition_ktype = {
+	.sysfs_ops	= &partition_ops,
+	.default_attrs	= &partition_default_attrs,
+	.release	= cpuoffline_partition_release,
+};
 
 /* cpu class sysdev device registration */
+
+#if 0
+static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
+		struct sys_device *sys_dev)
+{
+	int ret = 0;
+	struct kobject kobj;
+
+	/* XXX set up per-CPU statistics here, which is ktype_device */
+
+	ret = kobject_init_and_add(&kobj, &ktype_device,
+			&sys_dev->kobj, "%s", "cpuoffline");
+
+	return 0;
+}
+#endif
+
+#if 0
+static int cpuoffline_add_partition_interface(
+		struct cpuoffline_partition *partition)
+{
+	/*
+	 * XXX symlink to the individual CPUs?  No cpuoffline_add_dev_interface
+	 * can do that...
+	 */
+
+	/*
+	 * XXX create sysfs entry for current_governor, available_governors
+	 */
+
+	return 0;
+}
+#endif
 
 static int cpuoffline_add_dev(struct sys_device *sys_dev)
 {
 	unsigned int cpu = sys_dev->id;
 	int ret = 0;
+	//char name[MAX_NAME_LEN];
 	struct cpuoffline_partition *partition;
 
 	pr_err("%s: cpu is %d\n", __func__, cpu);
@@ -79,31 +278,63 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 			goto err_free_cpus;
 
 		/*
-		 * The driver->init is responsible for populating two pieces of
-		 * data:
+		 * driver->init is responsible for two pieces of data:
+		 *
 		 * 1) for every CPU in this partition it must populate the
 		 * per-cpu *partition pointer, which points to the memory
 		 * allocated above
+		 *
 		 * 2) for every CPU in this partition it must set that bit in
 		 * partition->cpus
 		 */
 		ret = cpuoffline_driver->init(partition);
+
+		if (ret)
+			pr_err("%s: handle this error!\n", __func__);
+
+		/* create directory in sysfs for this partition */
+		/*sprintf(name, "%s%d", "partition", nr_partitions++);*/
+		/*partition->kobj =
+			kobject_create_and_add(name, cpuoffline_global_kobject);*/
+		ret = kobject_init_and_add(&partition->kobj, &partition_ktype,
+				cpuoffline_global_kobject, "%s%d", "partition",
+				nr_partitions++);
+
+		if (ret)
+			goto err_kobj_partition;
+
+		/* XXX add attribute for current_governor & available_governors */
 	} else {
 		pr_err("%s partition is initialized to %p for cpu %d\n",
 				__func__, partition, cpu);
 	}
 
-	goto out;
+	/* XXX maybe mutex_unlock here? */
 
 	/* XXX should I try_module_get here? */
 
 	/*
 	 * need to set up sysfs interfaces here:
-	 * ret = cpuoffline_add_dev_interface(cpu, policy, sys_dev);
 	 */
+	/*
+	 * kobj refcounting note: every sys_dev added calls kobj_get, including
+	 * the first CPU which allocates the partition.  Even if all of the
+	 * devices in the partition are removed later on, it will have a
+	 * refcount of 1.  The intention is that module unloading should
+	 * decrement this final refcount, not sys_dev removal.
+	 */
+	/*
+	 * XXX maybe just pass in partition->kobj next time, or cpu instead of
+	 * sys_dev
+	 */
+	//ret = cpuoffline_add_dev_interface(partition, sys_dev);
 
-	return ret;
+	goto out;
 
+	//return ret;
+
+err_kobj_partition:
+	kobject_put(&partition->kobj);
 err_free_cpus:
 	free_cpumask_var(partition->cpus);
 err_free_partition:
@@ -220,7 +451,7 @@ static int __init cpuoffline_core_init(void)
 	cpuoffline_global_kobject = kobject_create_and_add("cpuoffline",
 			&cpu_sysdev_class.kset.kobj);
 
-	BUG_ON(!cpuoffline_global_kobject);
+	WARN_ON(!cpuoffline_global_kobject);
 	/*register_syscore_ops(&cpuoffline_syscore_ops);*/
 
 	return 0;

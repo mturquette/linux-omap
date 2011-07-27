@@ -31,6 +31,14 @@
 DECLARE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
 DECLARE_PER_CPU(int, cpuoffline_can_offline);
 
+/* struct attribute should give us show/store function pointers */
+struct cpuoffline_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct cpuoffline_partition *partition, char *buf);
+	ssize_t (*store)(struct cpuoffline_partition *partition,
+			const char *buf, size_t count);
+};
+
 struct cpuoffline_governor {
 	char		name[NAME_LEN];
 };
@@ -52,6 +60,9 @@ struct cpuoffline_partition {
 	struct cpuoffline_governor	*governor;
 
 	struct kobject			kobj;
+	struct completion		kobj_unregister;
+
+	char gov_string[16];
 };
 
 struct cpuoffline_driver {
