@@ -27,10 +27,7 @@ DEFINE_PER_CPU(int, cpuoffline_can_offline);
 
 struct cpuoffline_driver *cpuoffline_driver;
 struct kobject *cpuoffline_global_kobject;
-/*
- * XXX is the below necessary ?
 EXPORT_SYMBOL(cpuoffline_global_kobject);
-*/
 
 /* sysfs interfaces */
 
@@ -60,10 +57,6 @@ static ssize_t available_governors_show(struct cpuoffline_partition *partition,
 	return snprintf(buf, PAGE_SIZE, "available guvnas\n");
 }
 
-/*
- * XXX what is the difference between partition_show below and
- * current_governor_show above?
- */
 static ssize_t partition_show(struct kobject *kobj, struct attribute *attr,
 		char *buf)
 {
@@ -126,13 +119,6 @@ out:
 	return ret;
 }
 
-/* XXX ok, these perhaps do not need to be in an array... */
-/*static struct cpuoffline_attribute partition_default_attrs[] = {
-	__ATTR(current_governor, (S_IRUGO | S_IWUSR), current_governor_show,
-			current_governor_store),
-	__ATTR_RO(available_governors),
-};*/
-
 static struct cpuoffline_attribute current_governor =
 	__ATTR(current_governor, (S_IRUGO | S_IWUSR), current_governor_show,
 			current_governor_store);
@@ -145,25 +131,6 @@ static struct attribute *partition_default_attrs[] = {
 	&available_governors.attr,
 	NULL,
 };
-
-/*static struct attribute *partition_default_attrs[] = {
-	&current_governor,
-	&available_governors,
-	NULL,
-};*/
-
-#if 0
-static struct attribute *device_default_attrs[] = {
-	&statistics1,
-	&statistics2,
-	NULL,
-};
-#endif
-
-/*
- * XXX can I use some default ops instead of this?
- * No need for customer show/store if locking is not a concern...
- */
 
 static const struct sysfs_ops partition_ops = {
 	.show	= partition_show,
@@ -183,7 +150,7 @@ static void cpuoffline_partition_release(struct kobject *kobj)
 
 static struct kobj_type partition_ktype = {
 	.sysfs_ops	= &partition_ops,
-	.default_attrs	= &partition_default_attrs,
+	.default_attrs	= partition_default_attrs,
 	.release	= cpuoffline_partition_release,
 };
 
@@ -198,6 +165,10 @@ static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
 
 	/* XXX set up per-CPU statistics here, which is ktype_device */
 
+	/* XXX create symlinks from each CPU to its partition */
+
+	/* XXX create symlink from each partition to *this* CPU */
+
 	ret = kobject_init_and_add(&kobj, &ktype_device,
 			&sys_dev->kobj, "%s", "cpuoffline");
 
@@ -205,22 +176,13 @@ static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
 }
 #endif
 
-#if 0
 static int cpuoffline_add_partition_interface(
 		struct cpuoffline_partition *partition)
 {
-	/*
-	 * XXX symlink to the individual CPUs?  No cpuoffline_add_dev_interface
-	 * can do that...
-	 */
-
-	/*
-	 * XXX create sysfs entry for current_governor, available_governors
-	 */
-
-	return 0;
+	return kobject_init_and_add(&partition->kobj, &partition_ktype,
+			cpuoffline_global_kobject, "%s%d", "partition",
+			nr_partitions++);
 }
-#endif
 
 static int cpuoffline_add_dev(struct sys_device *sys_dev)
 {
@@ -293,12 +255,7 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 			pr_err("%s: handle this error!\n", __func__);
 
 		/* create directory in sysfs for this partition */
-		/*sprintf(name, "%s%d", "partition", nr_partitions++);*/
-		/*partition->kobj =
-			kobject_create_and_add(name, cpuoffline_global_kobject);*/
-		ret = kobject_init_and_add(&partition->kobj, &partition_ktype,
-				cpuoffline_global_kobject, "%s%d", "partition",
-				nr_partitions++);
+		ret = cpuoffline_add_partition_interface(partition);
 
 		if (ret)
 			goto err_kobj_partition;
