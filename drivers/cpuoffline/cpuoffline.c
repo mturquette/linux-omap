@@ -34,14 +34,13 @@ EXPORT_SYMBOL(cpuoffline_global_kobject);
 static ssize_t current_governor_show(struct cpuoffline_partition *partition,
 		char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, partition->gov_string);
+	return snprintf(buf, PAGE_SIZE, "%s\n", partition->gov_string);
 }
 
 static ssize_t current_governor_store(struct cpuoffline_partition *partition,
 		const char *buf, size_t count)
 {
 	int ret;
-	//char gov_string[16];
 
 	ret = sscanf(buf, "%15s", partition->gov_string);
 

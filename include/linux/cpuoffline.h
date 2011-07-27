@@ -11,18 +11,6 @@
 
 #include <linux/cpu.h>
 
-/*
- * per-CPU data is supplied by the driver during initialization.  It consists
- * of two members:
- *
- * struct cpuoffline_partition *cpuoffline_partition_data - a pointer to the
- * partition instance to which this CPU belongs.
- *
- * int can_offline - flag stating whether this CPU can be put offline as a
- * matter of policy; this flag is not meant to declare which CPUs can't go
- * offline due to hardware constraints.
- */
-
 #ifndef _LINUX_CPUOFFLINE_H
 #define _LINUX_CPUOFFLINE_H
 
@@ -62,6 +50,7 @@ struct cpuoffline_partition {
 	struct kobject			kobj;
 	struct completion		kobj_unregister;
 
+	/* XXX hack for testing */
 	char gov_string[16];
 };
 
@@ -70,23 +59,12 @@ struct cpuoffline_driver {
 	int (*exit)(struct cpuoffline_partition *partition);
 };
 
-/*
- * sysfs thoughts:
- * /sys/devices/system/cpu/cpuoffline - partition level control
- * 	/sys/devices/system/cpu/cpuoffline/partition1name
- * 	/sys/devices/system/cpu/cpuoffline/partition2name
- *
- * /sys/devices/system/cpu/cpu0/cpuoffline - cpu level control
- * 	/sys/devices/system/cpu/cpu0/cpuoffline/can_offline
- * 	/sys/devices/system/cpu/cpu0/cpuoffline/consider_load
- */
-
 /* registration functions */
-/*int cpuoffline_register_governor(struct cpuoffline_governor *governor);
-void cpuoffline_unregister_governor(struct cpuoffline_governor *governor);*/
 
-/*int cpuoffline_register_partition(struct cpuoffline_partition *cp);
-void cpuoffline_unregister_partition(struct cpuoffline_partition *cp);*/
+/*
+int cpuoffline_register_governor(struct cpuoffline_governor *governor);
+void cpuoffline_unregister_governor(struct cpuoffline_governor *governor);
+*/
 
 int cpuoffline_register_driver(struct cpuoffline_driver *driver);
 int cpuoffline_unregister_driver(struct cpuoffline_driver *driver);
