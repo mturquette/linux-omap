@@ -14,7 +14,7 @@
 #include <linux/slab.h>
 //#include <linux/kobject.h>
 #include <linux/sysfs.h>
-//#include <linux/err.h>
+#include <linux/err.h>
 
 #define MAX_CPU_LEN	8
 
@@ -204,14 +204,81 @@ static int cpuoffline_add_partition_interface(
 			partition->id);
 }
 
-static int cpuoffline_partition_init(struct cpuoffline_partition *partition)
+static int cpuoffline_governor_init(struct cpuoffline_partition *partition)
 {
 	return 0;
 }
 
-static int cpuoffline_governor_init(struct cpuoffline_partition *partition)
+struct cpuoffline_partition *cpuoffline_partition_init(unsigned int cpu)
 {
-	return 0;
+	int ret = -ENOMEM;
+	struct cpuoffline_partition *partition;
+
+	partition = kzalloc(sizeof(struct cpuoffline_partition),
+			GFP_KERNEL);
+	if (!partition)
+		goto out;
+
+	pr_err("%s newly alloc'd partition is %p for cpu %d\n",
+			__func__, partition, cpu);
+
+	/* start populating ->cpus with this cpu first */
+	if (!zalloc_cpumask_var(&partition->cpus, GFP_KERNEL))
+		goto err_free_partition;
+
+	cpumask_copy(partition->cpus, cpumask_of(cpu));
+
+	/* XXX do I keep this?  Don't think so... */
+	if (!zalloc_cpumask_var(&partition->cpus_can_offline,
+				GFP_KERNEL))
+		goto err_free_cpus;
+
+	partition->id = nr_partitions++;
+
+	/*
+	 * driver->init is responsible for two pieces of data:
+	 *
+	 * 1) for every CPU in this partition it must populate the
+	 * per-cpu *partition pointer, which points to the memory
+	 * allocated above
+	 *
+	 * 2) for every CPU in this partition it must set that bit in
+	 * partition->cpus
+	 */
+	ret = cpuoffline_driver->init(partition);
+
+	if (ret) {
+		pr_err("%s: failed to init driver\n", __func__);
+		goto err_free_cpus_can_offline;
+	}
+
+	/* create directory in sysfs for this partition */
+	ret = cpuoffline_add_partition_interface(partition);
+
+	/* decrement partition->kobj if the above returns error */
+	if (ret)
+		goto err_kobj_partition;
+
+	/* XXX add attribute for current_governor & available_governors */
+
+	ret = cpuoffline_governor_init(partition);
+
+	if (ret)
+		goto err_governor_init;
+
+	return partition;
+
+err_governor_init:
+err_kobj_partition:
+	kobject_put(&partition->kobj);
+err_free_cpus_can_offline:
+	free_cpumask_var(partition->cpus_can_offline);
+err_free_cpus:
+	free_cpumask_var(partition->cpus);
+err_free_partition:
+	kfree(partition);
+out:
+	return (struct cpuoffline_partition *)ret;
 }
 
 static int cpuoffline_add_dev(struct sys_device *sys_dev)
@@ -248,57 +315,12 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 	 * is to create per-CPU sysfs entries.
 	 */
 	if (!partition) {
-		cpuoffline_partition_init(partition);
 		pr_err("%s partition is NULL for cpu %d\n", __func__, cpu);
 
-		ret = -ENOMEM;
-		partition = kzalloc(sizeof(struct cpuoffline_partition),
-				GFP_KERNEL);
-		if (!partition)
+		partition = cpuoffline_partition_init(cpu);
+
+		if (IS_ERR(partition))
 			goto out;
-
-		pr_err("%s newly alloc'd partition is %p for cpu %d\n",
-				__func__, partition, cpu);
-
-		/* start populating ->cpus with this cpu first */
-		if (!zalloc_cpumask_var(&partition->cpus, GFP_KERNEL))
-			goto err_free_partition;
-
-		cpumask_copy(partition->cpus, cpumask_of(cpu));
-
-		if (!zalloc_cpumask_var(&partition->cpus_can_offline,
-					GFP_KERNEL))
-			goto err_free_cpus;
-
-		partition->id = nr_partitions++;
-
-		/*
-		 * driver->init is responsible for two pieces of data:
-		 *
-		 * 1) for every CPU in this partition it must populate the
-		 * per-cpu *partition pointer, which points to the memory
-		 * allocated above
-		 *
-		 * 2) for every CPU in this partition it must set that bit in
-		 * partition->cpus
-		 */
-		ret = cpuoffline_driver->init(partition);
-
-		if (ret)
-			pr_err("%s: handle this error!\n", __func__);
-
-		/* create directory in sysfs for this partition */
-		ret = cpuoffline_add_partition_interface(partition);
-
-		if (ret)
-			goto err_kobj_partition;
-
-		/* XXX add attribute for current_governor & available_governors */
-
-		ret = cpuoffline_governor_init(partition);
-
-		if (ret)
-			goto err_governor_init;
 	} else {
 		pr_err("%s partition is initialized to %p for cpu %d\n",
 				__func__, partition, cpu);
