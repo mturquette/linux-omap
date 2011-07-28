@@ -170,7 +170,7 @@ static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
 	if (!kobj) {
 		pr_warning("%s: failed to create cpuoffline dir for cpu %d\n",
 				__func__, sys_dev->id);
-		goto out;
+		return -ENOMEM;
 	}
 
 #ifdef CONFIG_CPU_OFFLINE_STATISTICS
@@ -192,8 +192,8 @@ static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
 	if (ret)
 		pr_warning("%s: failed to create symlink from partition %d to cpu %d\n",
 				__func__, partition->id, sys_dev->id);
-out:
-	return ret;
+
+	return 0;
 }
 
 static int cpuoffline_add_partition_interface(
