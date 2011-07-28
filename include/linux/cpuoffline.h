@@ -17,7 +17,7 @@
 #define MAX_NAME_LEN		16
 
 DECLARE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
-DECLARE_PER_CPU(int, cpuoffline_can_offline);
+//DECLARE_PER_CPU(int, cpuoffline_can_offline);
 
 /* struct attribute should give us show/store function pointers */
 struct cpuoffline_attribute {
@@ -28,8 +28,29 @@ struct cpuoffline_attribute {
 };
 
 struct cpuoffline_governor {
+	char	name[MAX_NAME_LEN];
+	int	(*governor_start)(struct cpuoffline_partition *partition);
+	int	(*governor_stop)(struct cpuoffline_partition *partition);
+	struct	list_head        governor_list;
+	struct	module           *owner;
+#if 0
+	int (*governor)(struct cpufreq_policy *policy,
+			unsigned int event);
+	ssize_t (*show_setspeed)        (struct cpufreq_policy *policy,
+			char *buf);
+	int     (*store_setspeed)       (struct cpufreq_policy *policy,
+			unsigned int freq);
+	unsigned int max_transition_latency; /* HW must be able to switch to
+						next freq faster than this value in nano secs or we
+						will fallback to performance governor */
+#endif
+};
+
+#if 0
+struct cpuoffline_governor {
 	char		name[MAX_NAME_LEN];
 };
+#endif
 
 /**
  * cpuoffline_parition - set of CPUs affected by a CPUoffline governor

@@ -16,14 +16,14 @@
 #include <linux/sysfs.h>
 //#include <linux/err.h>
 
-#define MAX_NAME_LEN	16
+#define MAX_CPU_LEN	8
 
 static int nr_partitions = 0;
 
 DEFINE_MUTEX(cpuoffline_mutex);
 
 DEFINE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
-DEFINE_PER_CPU(int, cpuoffline_can_offline);
+//DEFINE_PER_CPU(int, cpuoffline_can_offline);
 
 struct cpuoffline_driver *cpuoffline_driver;
 struct kobject *cpuoffline_global_kobject;
@@ -159,7 +159,7 @@ static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
 		struct sys_device *sys_dev)
 {
 	int ret = 0;
-	char name[8];
+	char name[MAX_CPU_LEN];
 	struct kobject *kobj;
 
 	/* create cpuoffline directory for this CPU */
@@ -186,7 +186,7 @@ static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
 				__func__, sys_dev->id, partition->id);
 
 	/* create a symlink from this cpu's partition to itself */
-	snprintf(name, 8, "cpu%d", sys_dev->id);
+	snprintf(name, MAX_CPU_LEN, "cpu%d", sys_dev->id);
 	ret = sysfs_create_link(&partition->kobj, kobj, name);
 
 	if (ret)
@@ -204,6 +204,16 @@ static int cpuoffline_add_partition_interface(
 			partition->id);
 }
 
+static int cpuoffline_partition_init(struct cpuoffline_partition *partition)
+{
+	return 0;
+}
+
+static int cpuoffline_governor_init(struct cpuoffline_partition *partition)
+{
+	return 0;
+}
+
 static int cpuoffline_add_dev(struct sys_device *sys_dev)
 {
 	unsigned int cpu = sys_dev->id;
@@ -219,8 +229,7 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 
 	if (!cpuoffline_driver) {
 		pr_err("%s: no cpuoffline driver registered\n", __func__);
-		ret = -EINVAL;
-		goto out;
+		return -EINVAL;
 	}
 
 	/* XXX should I try_module_get here? */
@@ -239,6 +248,7 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 	 * is to create per-CPU sysfs entries.
 	 */
 	if (!partition) {
+		cpuoffline_partition_init(partition);
 		pr_err("%s partition is NULL for cpu %d\n", __func__, cpu);
 
 		ret = -ENOMEM;
@@ -246,6 +256,7 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 				GFP_KERNEL);
 		if (!partition)
 			goto out;
+
 		pr_err("%s newly alloc'd partition is %p for cpu %d\n",
 				__func__, partition, cpu);
 
@@ -283,6 +294,11 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 			goto err_kobj_partition;
 
 		/* XXX add attribute for current_governor & available_governors */
+
+		ret = cpuoffline_governor_init(partition);
+
+		if (ret)
+			goto err_governor_init;
 	} else {
 		pr_err("%s partition is initialized to %p for cpu %d\n",
 				__func__, partition, cpu);
@@ -312,6 +328,7 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 
 	//return ret;
 
+err_governor_init:
 err_kobj_partition:
 	kobject_put(&partition->kobj);
 err_free_cpus:
