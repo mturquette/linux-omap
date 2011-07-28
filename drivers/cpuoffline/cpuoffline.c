@@ -34,7 +34,7 @@ EXPORT_SYMBOL(cpuoffline_global_kobject);
 static ssize_t current_governor_show(struct cpuoffline_partition *partition,
 		char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "%s\n", partition->gov_string);
+	return snprintf(buf, MAX_NAME_LEN, "%s\n", partition->gov_string);
 }
 
 static ssize_t current_governor_store(struct cpuoffline_partition *partition,
@@ -155,32 +155,53 @@ static struct kobj_type partition_ktype = {
 
 /* cpu class sysdev device registration */
 
-#if 0
 static int cpuoffline_add_dev_interface(struct cpuoffline_partition *partition,
 		struct sys_device *sys_dev)
 {
 	int ret = 0;
-	struct kobject kobj;
+	char name[8];
+	struct kobject *kobj;
 
+	/* create cpuoffline directory for this CPU */
+	/*ret = kobject_init_and_add(&kobj, &ktype_device,
+			&sys_dev->kobj, "%s", "cpuoffline");*/
+	kobj = kobject_create_and_add("cpuoffline", &sys_dev->kobj);
+
+	if (!kobj) {
+		pr_warning("%s: failed to create cpuoffline dir for cpu %d\n",
+				__func__, sys_dev->id);
+		goto out;
+	}
+
+#ifdef CONFIG_CPU_OFFLINE_STATISTICS
 	/* XXX set up per-CPU statistics here, which is ktype_device */
-
-	/* XXX create symlinks from each CPU to its partition */
-
-	/* XXX create symlink from each partition to *this* CPU */
-
-	ret = kobject_init_and_add(&kobj, &ktype_device,
-			&sys_dev->kobj, "%s", "cpuoffline");
-
-	return 0;
-}
+	/* create directory for cpuoffline stats */
 #endif
+
+	/* create a symlink from this cpu to its partition */
+	ret = sysfs_create_link(kobj, &partition->kobj, "partition");
+
+	if (ret)
+		pr_warning("%s: failed to create symlink from cpu %d to partition %d\n",
+				__func__, sys_dev->id, partition->id);
+
+	/* create a symlink from this cpu's partition to itself */
+	snprintf(name, 8, "cpu%d", sys_dev->id);
+	ret = sysfs_create_link(&partition->kobj, kobj, name);
+
+	if (ret)
+		pr_warning("%s: failed to create symlink from partition %d to cpu %d\n",
+				__func__, partition->id, sys_dev->id);
+out:
+	return ret;
+}
 
 static int cpuoffline_add_partition_interface(
 		struct cpuoffline_partition *partition)
 {
 	return kobject_init_and_add(&partition->kobj, &partition_ktype,
 			cpuoffline_global_kobject, "%s%d", "partition",
-			nr_partitions++);
+			partition->id);
 }
 
 static int cpuoffline_add_dev(struct sys_device *sys_dev)
@@ -238,6 +259,8 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 					GFP_KERNEL))
 			goto err_free_cpus;
 
+		partition->id = nr_partitions++;
+
 		/*
 		 * driver->init is responsible for two pieces of data:
 		 *
@@ -283,7 +306,7 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 	 * XXX maybe just pass in partition->kobj next time, or cpu instead of
 	 * sys_dev
 	 */
-	//ret = cpuoffline_add_dev_interface(partition, sys_dev);
+	ret = cpuoffline_add_dev_interface(partition, sys_dev);
 
 	goto out;
 
@@ -316,7 +339,7 @@ int cpuoffline_register_driver(struct cpuoffline_driver *driver)
 {
 	int ret = 0;
 
-	pr_err("%s\n", __func__);
+	pr_info("%s\n", __func__);
 
 	if (!driver)
 		return -EINVAL;

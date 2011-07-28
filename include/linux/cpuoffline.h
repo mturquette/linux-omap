@@ -14,7 +14,7 @@
 #ifndef _LINUX_CPUOFFLINE_H
 #define _LINUX_CPUOFFLINE_H
 
-#define NAME_LEN		16
+#define MAX_NAME_LEN		16
 
 DECLARE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
 DECLARE_PER_CPU(int, cpuoffline_can_offline);
@@ -28,7 +28,7 @@ struct cpuoffline_attribute {
 };
 
 struct cpuoffline_governor {
-	char		name[NAME_LEN];
+	char		name[MAX_NAME_LEN];
 };
 
 /**
@@ -41,6 +41,8 @@ struct cpuoffline_governor {
  * @cpuoffline_governor - governor policy for hotplugging CPUs
  */
 struct cpuoffline_partition {
+	int				id;
+	char				name[MAX_NAME_LEN];
 	cpumask_var_t			cpus;
 	cpumask_var_t			cpus_can_offline;
 	int				min_cpus_online;
@@ -51,7 +53,7 @@ struct cpuoffline_partition {
 	struct completion		kobj_unregister;
 
 	/* XXX hack for testing */
-	char gov_string[16];
+	char				gov_string[MAX_NAME_LEN];
 };
 
 struct cpuoffline_driver {
