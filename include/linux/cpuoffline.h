@@ -10,29 +10,25 @@
  */
 
 #include <linux/cpu.h>
+#include <linux/mutex.h>
 
 #ifndef _LINUX_CPUOFFLINE_H
 #define _LINUX_CPUOFFLINE_H
 
 #define MAX_NAME_LEN		16
 
-DECLARE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
+//DECLARE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
 //DECLARE_PER_CPU(int, cpuoffline_can_offline);
 
-/* struct attribute should give us show/store function pointers */
-struct cpuoffline_attribute {
-	struct attribute attr;
-	ssize_t (*show)(struct cpuoffline_partition *partition, char *buf);
-	ssize_t (*store)(struct cpuoffline_partition *partition,
-			const char *buf, size_t count);
-};
+struct cpuoffline_partition;
 
 struct cpuoffline_governor {
-	char	name[MAX_NAME_LEN];
-	int	(*governor_start)(struct cpuoffline_partition *partition);
-	int	(*governor_stop)(struct cpuoffline_partition *partition);
-	struct	list_head        governor_list;
-	struct	module           *owner;
+	char			name[MAX_NAME_LEN];
+	struct list_head	governor_list;
+	struct mutex		mutex;
+	struct module		*owner;
+	int (*start)(struct cpuoffline_partition *partition);
+	int (*stop)(struct cpuoffline_partition *partition);
 #if 0
 	int (*governor)(struct cpufreq_policy *policy,
 			unsigned int event);
@@ -73,6 +69,7 @@ struct cpuoffline_partition {
 	struct kobject			kobj;
 	struct completion		kobj_unregister;
 
+	struct mutex			mutex;
 	/* XXX hack for testing */
 	char				gov_string[MAX_NAME_LEN];
 };
@@ -80,6 +77,14 @@ struct cpuoffline_partition {
 struct cpuoffline_driver {
 	int (*init)(struct cpuoffline_partition *partition);
 	int (*exit)(struct cpuoffline_partition *partition);
+};
+
+/* kobject/sysfs definitions */
+struct cpuoffline_attribute {
+	struct attribute attr;
+	ssize_t (*show)(struct cpuoffline_partition *partition, char *buf);
+	ssize_t (*store)(struct cpuoffline_partition *partition,
+			const char *buf, size_t count);
 };
 
 /* registration functions */

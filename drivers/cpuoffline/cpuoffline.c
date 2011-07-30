@@ -20,16 +20,30 @@
 
 static int nr_partitions = 0;
 
-DEFINE_MUTEX(cpuoffline_mutex);
+static struct cpuoffline_driver *cpuoffline_driver;
+DEFINE_MUTEX(cpuoffline_driver_mutex);
 
-DEFINE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
-//DEFINE_PER_CPU(int, cpuoffline_can_offline);
+static LIST_HEAD(cpuoffline_governor_list);
+static DEFINE_MUTEX(cpuoffline_governor_mutex);
 
-struct cpuoffline_driver *cpuoffline_driver;
+static DEFINE_PER_CPU(struct cpuoffline_partition *, cpuoffline_partition);
+/*DEFINE_PER_CPU(int, cpuoffline_can_offline);*/
+
 struct kobject *cpuoffline_global_kobject;
 EXPORT_SYMBOL(cpuoffline_global_kobject);
 
 /* sysfs interfaces */
+
+static struct cpuoffline_governor *__find_governor(const char *str_governor)
+{
+	struct cpuoffline_governor *gov;
+
+	list_for_each_entry(gov, &cpuoffline_governor_list, governor_list)
+		if (!strnicmp(str_governor, gov->name, MAX_NAME_LEN))
+			return gov;
+
+	return NULL;
+}
 
 static ssize_t current_governor_show(struct cpuoffline_partition *partition,
 		char *buf)
@@ -53,7 +67,14 @@ static ssize_t current_governor_store(struct cpuoffline_partition *partition,
 static ssize_t available_governors_show(struct cpuoffline_partition *partition,
 		char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "available guvnas\n");
+	ssize_t ret = 0;
+	struct cpuoffline_governor *gov;
+
+	list_for_each_entry(gov, &cpuoffline_governor_list, governor_list)
+		ret += snprintf(buf, MAX_NAME_LEN, "%s\n", gov->name);
+
+	return ret;
+	/*return snprintf(buf, PAGE_SIZE, "available guvnas\n");*/
 }
 
 static ssize_t partition_show(struct kobject *kobj, struct attribute *attr,
@@ -61,15 +82,15 @@ static ssize_t partition_show(struct kobject *kobj, struct attribute *attr,
 {
 	struct cpuoffline_partition *partition;
 	struct cpuoffline_attribute *c_attr;
-	ssize_t ret = -EINVAL;
+	ssize_t ret;
 
-	mutex_lock(&cpuoffline_mutex);
 	partition = container_of(kobj, struct cpuoffline_partition, kobj);
 	c_attr = container_of(attr, struct cpuoffline_attribute, attr);
 
 	if (!partition || !c_attr)
-		goto out;
+		return -EINVAL;
 
+	mutex_lock(&partition->mutex);
 	/* refcount++ */
 	kobject_get(&partition->kobj);
 
@@ -82,8 +103,7 @@ static ssize_t partition_show(struct kobject *kobj, struct attribute *attr,
 	/* refcount-- */
 	kobject_put(&partition->kobj);
 
-out:
-	mutex_unlock(&cpuoffline_mutex);
+	mutex_unlock(&partition->mutex);
 	return ret;
 }
 
@@ -94,13 +114,13 @@ static ssize_t partition_store(struct kobject *kobj, struct attribute *attr,
 	struct cpuoffline_attribute *c_attr;
 	ssize_t ret = -EINVAL;
 
-	mutex_lock(&cpuoffline_mutex);
 	partition = container_of(kobj, struct cpuoffline_partition, kobj);
 	c_attr = container_of(attr, struct cpuoffline_attribute, attr);
 
 	if (!partition || !c_attr)
 		goto out;
 
+	mutex_lock(&partition->mutex);
 	/* refcount++ */
 	kobject_get(&partition->kobj);
 
@@ -114,7 +134,7 @@ static ssize_t partition_store(struct kobject *kobj, struct attribute *attr,
 	kobject_put(&partition->kobj);
 
 out:
-	mutex_unlock(&cpuoffline_mutex);
+	mutex_unlock(&partition->mutex);
 	return ret;
 }
 
@@ -206,6 +226,16 @@ static int cpuoffline_add_partition_interface(
 
 static int cpuoffline_governor_init(struct cpuoffline_partition *partition)
 {
+	int ret;
+
+	/* XXX initialize governor? */
+
+	/* set up governor sysfs */
+	//cpuoffline_add_governor_interface();
+
+	/* start governor */
+	//partition->governor->start(partition);
+
 	return 0;
 }
 
@@ -232,6 +262,8 @@ struct cpuoffline_partition *cpuoffline_partition_init(unsigned int cpu)
 	if (!zalloc_cpumask_var(&partition->cpus_can_offline,
 				GFP_KERNEL))
 		goto err_free_cpus;
+
+	mutex_init(&partition->mutex);
 
 	partition->id = nr_partitions++;
 
@@ -261,6 +293,7 @@ struct cpuoffline_partition *cpuoffline_partition_init(unsigned int cpu)
 
 	/* XXX add attribute for current_governor & available_governors */
 
+	/* initialize goveror for this partition */
 	ret = cpuoffline_governor_init(partition);
 
 	if (ret)
@@ -278,9 +311,10 @@ err_free_cpus:
 err_free_partition:
 	kfree(partition);
 out:
-	return (struct cpuoffline_partition *)ret;
+	return (void *)ret;
 }
 
+/* does not need locking because sequence is synchronous and orderly */
 static int cpuoffline_add_dev(struct sys_device *sys_dev)
 {
 	unsigned int cpu = sys_dev->id;
@@ -301,7 +335,11 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 
 	/* XXX should I try_module_get here? */
 
+	/*
+	 * XXX below is not needed to synchronous nature of sys_dev device
+	 * registration
 	mutex_lock(&cpuoffline_mutex);
+	*/
 	partition = per_cpu(cpuoffline_partition, cpu);
 
 	/*
@@ -319,8 +357,10 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 
 		partition = cpuoffline_partition_init(cpu);
 
-		if (IS_ERR(partition))
+		if (IS_ERR(partition)) {
+			pr_err("%s: failed to create partition\n", __func__);
 			goto out;
+		}
 	} else {
 		pr_err("%s partition is initialized to %p for cpu %d\n",
 				__func__, partition, cpu);
@@ -350,15 +390,8 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 
 	//return ret;
 
-err_governor_init:
-err_kobj_partition:
-	kobject_put(&partition->kobj);
-err_free_cpus:
-	free_cpumask_var(partition->cpus);
-err_free_partition:
-	kfree(partition);
 out:
-	mutex_unlock(&cpuoffline_mutex);
+	/*mutex_unlock(&cpuoffline_mutex);*/
 	return ret;
 }
 
@@ -383,7 +416,7 @@ int cpuoffline_register_driver(struct cpuoffline_driver *driver)
 	if (!driver)
 		return -EINVAL;
 
-	mutex_lock(&cpuoffline_mutex);
+	mutex_lock(&cpuoffline_driver_mutex);
 
 	/* there can only be one */
 	if (cpuoffline_driver)
@@ -391,7 +424,7 @@ int cpuoffline_register_driver(struct cpuoffline_driver *driver)
 	else
 		cpuoffline_driver = driver;
 
-	mutex_unlock(&cpuoffline_mutex);
+	mutex_unlock(&cpuoffline_driver_mutex);
 
 	if (ret)
 		goto out;
@@ -454,6 +487,28 @@ static int __init cpuoffline_register_default_driver(void)
 }
 late_initcall(cpuoffline_register_default_driver);
 #endif
+
+/* CPUoffline governor registration */
+int cpuoffline_register_governor(struct cpuoffline_governor *governor)
+{
+	int ret;
+
+	if (!governor)
+		return -EINVAL;
+
+	mutex_lock(&cpuoffline_governor_mutex);
+
+	ret = -EBUSY;
+	if (__find_governor(governor->name) == NULL) {
+		ret = 0;
+		list_add(&governor->governor_list, &cpuoffline_governor_list);
+	}
+
+	mutex_unlock(&cpuoffline_governor_mutex);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(cpuoffline_register_governor);
+
 
 /* CPUoffline core initialization */
 
