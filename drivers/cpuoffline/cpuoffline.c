@@ -34,6 +34,9 @@ EXPORT_SYMBOL(cpuoffline_global_kobject);
 
 /* sysfs interfaces */
 
+/* XXX HACK: see the comment block in current_governor_store */
+static int cpuoffline_add_governor_interface(struct cpuoffline_partition *partition);
+
 static struct cpuoffline_governor *__find_governor(const char *str_governor)
 {
 	struct cpuoffline_governor *gov;
@@ -41,6 +44,11 @@ static struct cpuoffline_governor *__find_governor(const char *str_governor)
 	list_for_each_entry(gov, &cpuoffline_governor_list, governor_list)
 		if (!strnicmp(str_governor, gov->name, MAX_NAME_LEN))
 			return gov;
+	/*
+	 * XXX food for thought: cpufreq actually tries to load the module if
+	 * it is not in the list:
+	 * cpufreq_parse_governor
+	 */
 
 	return NULL;
 }
@@ -48,18 +56,56 @@ static struct cpuoffline_governor *__find_governor(const char *str_governor)
 static ssize_t current_governor_show(struct cpuoffline_partition *partition,
 		char *buf)
 {
-	return snprintf(buf, MAX_NAME_LEN, "%s\n", partition->gov_string);
+	struct cpuoffline_governor *gov;
+	/*return snprintf(buf, MAX_NAME_LEN, "%s\n", partition->gov_string);*/
+
+	gov = partition->governor;
+
+	if (!gov)
+		return 0;
+
+	return snprintf(buf, MAX_NAME_LEN, "%s\n", gov->name);
 }
 
 static ssize_t current_governor_store(struct cpuoffline_partition *partition,
 		const char *buf, size_t count)
 {
 	int ret;
+	char govstring[MAX_NAME_LEN];
+	struct cpuoffline_governor *gov, *tempgov;
 
-	ret = sscanf(buf, "%15s", partition->gov_string);
+	gov = partition->governor;
+
+	ret = sscanf(buf, "%15s", govstring);
 
 	if (ret != 1)
 		return -EINVAL;
+
+	tempgov = __find_governor(govstring);
+
+	if (!tempgov)
+		return -EINVAL;
+
+	if (!try_module_get(tempgov->owner))
+		return -EINVAL;
+
+	/* XXX should gov->stop handle the module put?  probably not */
+	if (gov) {
+		gov->stop(partition);
+		module_put(gov->owner);
+	}
+
+	/* XXX kfree the governor? is this a memleak? */
+	partition->governor = gov = tempgov;
+
+	/*
+	 * XXX need to figure out where to call this:
+	cpuoffline_governor_init(partition);
+	 * for now just do:
+	 */
+	cpuoffline_add_governor_interface(partition);
+
+	gov->start(partition);
 
 	return count;
 }
@@ -94,7 +140,6 @@ static ssize_t partition_show(struct kobject *kobj, struct attribute *attr,
 	/* refcount++ */
 	kobject_get(&partition->kobj);
 
-	/* kobject should support per-object show/store function pointers... */
 	if (c_attr->show)
 		ret = c_attr->show(partition, buf);
 	else
@@ -124,7 +169,6 @@ static ssize_t partition_store(struct kobject *kobj, struct attribute *attr,
 	/* refcount++ */
 	kobject_get(&partition->kobj);
 
-	/* kobject should support per-object show/store function pointers... */
 	if(c_attr->store)
 		ret = c_attr->store(partition, buf, count);
 	else
@@ -137,6 +181,7 @@ out:
 	mutex_unlock(&partition->mutex);
 	return ret;
 }
+
 
 static struct cpuoffline_attribute current_governor =
 	__ATTR(current_governor, (S_IRUGO | S_IWUSR), current_governor_show,
@@ -172,6 +217,103 @@ static struct kobj_type partition_ktype = {
 	.default_attrs	= partition_default_attrs,
 	.release	= cpuoffline_partition_release,
 };
+
+/*
+ * XXX don't need the below until we start changing *global* governor values.
+ * practically speaking we really only want to change per-partition values used
+ * by a governor
+ */
+#if 0
+static ssize_t governor_show(struct kobject *kobj, struct attribute *attr,
+		char *buf)
+{
+	struct cpuoffline_partition *partition;
+	struct cpuoffline_attribute *c_attr;
+	ssize_t ret;
+
+	partition = container_of(kobj, struct cpuoffline_partition, kobj);
+	c_attr = container_of(attr, struct cpuoffline_attribute, attr);
+
+	if (!partition || !c_attr)
+		return -EINVAL;
+
+	mutex_lock(&partition->mutex);
+	/* refcount++ */
+	kobject_get(&partition->kobj);
+
+	if (c_attr->show)
+		ret = c_attr->show(partition, buf);
+	else
+		ret = -EIO;
+
+	/* refcount-- */
+	kobject_put(&partition->kobj);
+
+	mutex_unlock(&partition->mutex);
+	return ret;
+}
+
+static ssize_t governor_store(struct kobject *kobj, struct attribute *attr,
+		const char *buf, size_t count)
+{
+	struct cpuoffline_partition *partition;
+	struct cpuoffline_attribute *c_attr;
+	ssize_t ret = -EINVAL;
+
+	partition = container_of(kobj, struct cpuoffline_partition, kobj);
+	c_attr = container_of(attr, struct cpuoffline_attribute, attr);
+
+	if (!partition || !c_attr)
+		goto out;
+
+	mutex_lock(&partition->mutex);
+	/* refcount++ */
+	kobject_get(&partition->kobj);
+
+	if(c_attr->store)
+		ret = c_attr->store(partition, buf, count);
+	else
+		ret = -EIO;
+
+	/* refcount-- */
+	kobject_put(&partition->kobj);
+
+out:
+	mutex_unlock(&partition->mutex);
+	return ret;
+}
+
+static struct cpuoffline_attribute governor_name =
+	__ATTR_RO(governor_name);
+
+static struct attribute *governor_default_attrs[] = {
+	&governor_name.attr,
+	NULL,
+};
+
+static const struct sysfs_ops governor_ops = {
+	.show	= governor_show,
+	/* XXX does it make sense to have a store? */
+	/*.store	= governor_store,*/
+};
+
+static void cpuoffline_governor_release(struct kobject *kobj)
+{
+	struct cpuoffline_governor *governor;
+
+	governor = container_of(kobj, struct cpuoffline_governor, kobj);
+
+	pr_err("%s: releasing kobj for governor\n", __func__);
+
+	complete(&governor->kobj_unregister);
+}
+
+static struct kobj_type governor_ktype = {
+	.sysfs_ops	= &governor_ops,
+	.default_attrs	= governor_default_attrs,
+	.release	= cpuoffline_governor_release,
+};
+#endif
 
 /* cpu class sysdev device registration */
 
@@ -224,6 +366,28 @@ static int cpuoffline_add_partition_interface(
 			partition->id);
 }
 
+static int cpuoffline_add_governor_interface(struct cpuoffline_partition *partition)
+{
+	struct cpuoffline_governor *gov;
+
+	gov = partition->governor;
+
+	/*
+	 * XXX does governor even have a ktype?  what about "non-regular"
+	 * attributes?
+	 */
+	/*
+	 * XXX use partition_ktype until there is a real need for global
+	 * governors values to be tweaked
+	 */
+#if 0
+	return kobject_init_and_add(&gov->kobj, &governor_ktype,
+			&partition->kobj, "%s", gov->name);
+#endif
+	return kobject_init_and_add(&gov->kobj, &partition_ktype,
+			&partition->kobj, "%s", gov->name);
+}
+
 static int cpuoffline_governor_init(struct cpuoffline_partition *partition)
 {
 	int ret;
@@ -231,10 +395,13 @@ static int cpuoffline_governor_init(struct cpuoffline_partition *partition)
 	/* XXX initialize governor? */
 
 	/* set up governor sysfs */
-	//cpuoffline_add_governor_interface();
+	cpuoffline_add_governor_interface(partition);
 
 	/* start governor */
-	//partition->governor->start(partition);
+	if (!try_module_get(partition->governor->owner))
+		return -EINVAL;
+
+	partition->governor->start(partition);
 
 	return 0;
 }
@@ -259,9 +426,11 @@ struct cpuoffline_partition *cpuoffline_partition_init(unsigned int cpu)
 	cpumask_copy(partition->cpus, cpumask_of(cpu));
 
 	/* XXX do I keep this?  Don't think so... */
+#if 0
 	if (!zalloc_cpumask_var(&partition->cpus_can_offline,
 				GFP_KERNEL))
 		goto err_free_cpus;
+#endif
 
 	mutex_init(&partition->mutex);
 
@@ -293,11 +462,17 @@ struct cpuoffline_partition *cpuoffline_partition_init(unsigned int cpu)
 
 	/* XXX add attribute for current_governor & available_governors */
 
-	/* initialize goveror for this partition */
+	/*
+	 * XXX create default governor later; for now use sysfs to init
+	 * governor
+	 */
+#if 0
+	/* initialize governor for this partition */
 	ret = cpuoffline_governor_init(partition);
 
 	if (ret)
 		goto err_governor_init;
+#endif
 
 	return partition;
 
@@ -305,7 +480,9 @@ err_governor_init:
 err_kobj_partition:
 	kobject_put(&partition->kobj);
 err_free_cpus_can_offline:
+#if 0
 	free_cpumask_var(partition->cpus_can_offline);
+#endif
 err_free_cpus:
 	free_cpumask_var(partition->cpus);
 err_free_partition:

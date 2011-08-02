@@ -29,6 +29,7 @@ struct cpuoffline_governor {
 	struct module		*owner;
 	int (*start)(struct cpuoffline_partition *partition);
 	int (*stop)(struct cpuoffline_partition *partition);
+	struct kobject kobj;
 #if 0
 	int (*governor)(struct cpufreq_policy *policy,
 			unsigned int event);
@@ -61,9 +62,9 @@ struct cpuoffline_partition {
 	int				id;
 	char				name[MAX_NAME_LEN];
 	cpumask_var_t			cpus;
-	cpumask_var_t			cpus_can_offline;
+	/*cpumask_var_t			cpus_can_offline;*/
 	int				min_cpus_online;
-	int				max_cpus_online;
+	/*int				max_cpus_online;*/
 	struct cpuoffline_governor	*governor;
 
 	struct kobject			kobj;
@@ -89,10 +90,8 @@ struct cpuoffline_attribute {
 
 /* registration functions */
 
-/*
 int cpuoffline_register_governor(struct cpuoffline_governor *governor);
 void cpuoffline_unregister_governor(struct cpuoffline_governor *governor);
-*/
 
 int cpuoffline_register_driver(struct cpuoffline_driver *driver);
 int cpuoffline_unregister_driver(struct cpuoffline_driver *driver);
