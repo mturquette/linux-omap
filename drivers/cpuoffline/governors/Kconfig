@@ -1,0 +1,9 @@
+config CPU_OFFLINE_GOVERNOR_AVGLOAD
+	bool "CPUoffline Avgload governor"
+	depends on CPU_OFFLINE
+	help
+	  A simple governor that puts CPUs online or offline based on
+	  CPU load statistics.  It will always leave one CPU online in a
+	  partition.
+
+	  If in doubt, say N.
