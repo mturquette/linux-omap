@@ -517,7 +517,10 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 	 * registration
 	mutex_lock(&cpuoffline_mutex);
 	*/
+	/*
+	 * XXX remove per-CPU stuff for now...
 	partition = per_cpu(cpuoffline_partition, cpu);
+	 */
 
 	/*
 	 * The first cpu to hit this path will allocate partition and then
@@ -641,7 +644,10 @@ int cpuoffline_default_driver_init(struct cpuoffline_partition *partition)
 		return -EINVAL;
 
 	for_each_possible_cpu(i) {
+		/*
+		 * XXX remove per-cpu stuff for now...
 		per_cpu(cpuoffline_partition, i) = partition;
+		 */
 		cpu_set(i, *partition->cpus);
 	}
 
@@ -694,9 +700,12 @@ static int __init cpuoffline_core_init(void)
 	int cpu;
 
 	pr_err("%s\n", __func__);
+	/*
+	 * XXX remove per-cpu stuff for now...
 	for_each_possible_cpu(cpu) {
 		per_cpu(cpuoffline_partition, cpu) = NULL;
 	}
+	 */
 
 	cpuoffline_global_kobject = kobject_create_and_add("cpuoffline",
 			&cpu_sysdev_class.kset.kobj);

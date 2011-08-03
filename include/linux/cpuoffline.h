@@ -25,7 +25,7 @@ struct cpuoffline_partition;
 struct cpuoffline_governor {
 	char			name[MAX_NAME_LEN];
 	struct list_head	governor_list;
-	struct mutex		mutex;
+	/*struct mutex		mutex;*/
 	struct module		*owner;
 	int (*start)(struct cpuoffline_partition *partition);
 	int (*stop)(struct cpuoffline_partition *partition);
@@ -72,7 +72,9 @@ struct cpuoffline_partition {
 
 	struct mutex			mutex;
 	/* XXX hack for testing */
-	char				gov_string[MAX_NAME_LEN];
+	/*char				gov_string[MAX_NAME_LEN];*/
+	/* used by the governor to store per-partition data */
+	void *				private_data;
 };
 
 struct cpuoffline_driver {
