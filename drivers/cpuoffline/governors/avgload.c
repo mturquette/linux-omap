@@ -13,6 +13,9 @@
 #include <linux/slab.h>
 #include <linux/hrtimer.h>
 #include <linux/tick.h>
+
+#include <asm/cputime.h>
+
 //#include <linux/sched.h>
 
 /*
@@ -30,9 +33,7 @@
 #include <linux/sched.h>
 */
 
-#include <asm/cputime.h>
-
-#define AVGLOAD_SAMPLING_RATE	10000
+#define AVGLOAD_SAMPLING_RATE	1000000
 
 DEFINE_MUTEX(avgload_mutex);
 
@@ -55,7 +56,60 @@ DEFINE_PER_CPU(struct avgload_cpu_data, avgload_data);
 
 static void avgload_do_work(struct cpuoffline_partition *partition)
 {
+	unsigned int cpu;
+	cputime64_t cur_time_wall, cur_time_idle;
+	unsigned int delta_wall, delta_idle;
+	unsigned int load = 0;
+	struct avgload_partition_data *partition_data;
+	struct avgload_cpu_data *cpu_data;
+
 	pr_err("%s: here\n", __func__);
+
+	partition_data = partition->private_data;
+
+	for_each_cpu(cpu, partition->cpus) {
+		cpu_data = &per_cpu(cpu, avgload_data);
+
+		cur_time_idle = get_cpu_idle_time_us(cpu, &cur_time_wall);
+
+		delta_wall = (unsigned int) cputime64_sub(cur_wall_time,
+				partition_data->prev_time_wall);
+
+		delta_idle = (unsigned int) cputime64_sub(cur_idle_time,
+				cpu_data->prev_time_idle);
+
+		if (!wall_time || wall_time < idle_time)
+			continue;
+
+		load += 100 * (delta_wall - delta_idle) / delta_wall;
+	}
+
+	load /= cpumask_weight(partition->cpus);
+
+	if (load > partition_data->online_threshold) {
+		/*
+		 * XXX this should be the intersection point between:
+		 * 	cpumask_hotpluggable
+		 * 	partition->cpus
+		 * 	!cpumask_online
+		 */
+		cpu_up(...);
+		goto out;
+	}
+
+	if (load < partition_data->offline_threshold) {
+		/*
+		 * XXX this should be the intersection point between:
+		 * 	cpumask_hotpluggable
+		 * 	partition->cpus
+		 * 	cpumask_online
+		 */
+		cpu_down(...);
+		goto out;
+	}
+
+out:
+	return 0;
 }
 
 static void do_avgload_timer(struct work_struct *work)
@@ -118,8 +172,11 @@ static int cpuoffline_avgload_start(struct cpuoffline_partition *partition)
 
 	mutex_lock(&avgload_mutex);
 
+	partition_data->sampling_rate = AVGLOAD_SAMPLING_RATE;
+
 	/* populate idle times before kicking off the workqueue */
 	for_each_cpu(cpu, partition->cpus) {
+		pr_err("%s: cpu is %d\n", __func__, cpu);
 		cpu_data = &per_cpu(avgload_data, cpu);
 
 		cpu_data->prev_time_idle = get_cpu_idle_time_us(cpu,
@@ -162,8 +219,7 @@ static void __exit cpuoffline_avgload_exit(void)
 }
 
 MODULE_AUTHOR("Mike Turquette <mturquette@ti.com>");
-MODULE_DESCRIPTION("cpuoffline_avgload - policy for offlining CPUs based on "
-		"their load");
+MODULE_DESCRIPTION("cpuoffline_avgload - offline CPUs based on their load");
 MODULE_LICENSE("GPL");
 
 module_init(cpuoffline_avgload_init);
