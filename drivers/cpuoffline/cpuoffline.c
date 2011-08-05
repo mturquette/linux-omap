@@ -74,6 +74,7 @@ static ssize_t current_governor_store(struct cpuoffline_partition *partition,
 	char govstring[MAX_NAME_LEN];
 	struct cpuoffline_governor *gov, *tempgov;
 
+	pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));
 	gov = partition->governor;
 
 	ret = sscanf(buf, "%15s", govstring);
@@ -457,8 +458,10 @@ struct cpuoffline_partition *cpuoffline_partition_init(unsigned int cpu)
 	ret = cpuoffline_add_partition_interface(partition);
 
 	/* decrement partition->kobj if the above returns error */
-	if (ret)
+	if (ret) {
+		pr_err("%s: OMG SHOULDN'T BE HERE\n", __func__);
 		goto err_kobj_partition;
+	}
 
 	/* XXX add attribute for current_governor & available_governors */
 
@@ -487,6 +490,7 @@ err_free_cpus:
 	free_cpumask_var(partition->cpus);
 err_free_partition:
 	kfree(partition);
+	pr_err("%s: SHIT, shouldn't be here\n", __func__);
 out:
 	return (void *)ret;
 }
@@ -517,10 +521,7 @@ static int cpuoffline_add_dev(struct sys_device *sys_dev)
 	 * registration
 	mutex_lock(&cpuoffline_mutex);
 	*/
-	/*
-	 * XXX remove per-CPU stuff for now...
 	partition = per_cpu(cpuoffline_partition, cpu);
-	 */
 
 	/*
 	 * The first cpu to hit this path will allocate partition and then
@@ -644,11 +645,10 @@ int cpuoffline_default_driver_init(struct cpuoffline_partition *partition)
 		return -EINVAL;
 
 	for_each_possible_cpu(i) {
-		/*
-		 * XXX remove per-cpu stuff for now...
 		per_cpu(cpuoffline_partition, i) = partition;
-		 */
-		cpu_set(i, *partition->cpus);
+		pr_err("%s: setting CPU%d in partition->cpus\n", __func__, i);
+		cpumask_set_cpu(i, partition->cpus);
+		pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));
 	}
 
 	return 0;
@@ -700,12 +700,9 @@ static int __init cpuoffline_core_init(void)
 	int cpu;
 
 	pr_err("%s\n", __func__);
-	/*
-	 * XXX remove per-cpu stuff for now...
 	for_each_possible_cpu(cpu) {
 		per_cpu(cpuoffline_partition, cpu) = NULL;
 	}
-	 */
 
 	cpuoffline_global_kobject = kobject_create_and_add("cpuoffline",
 			&cpu_sysdev_class.kset.kobj);

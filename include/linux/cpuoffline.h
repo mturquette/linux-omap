@@ -74,7 +74,7 @@ struct cpuoffline_partition {
 	/* XXX hack for testing */
 	/*char				gov_string[MAX_NAME_LEN];*/
 	/* used by the governor to store per-partition data */
-	void *				private_data;
+	//void *				private_data;
 };
 
 struct cpuoffline_driver {
