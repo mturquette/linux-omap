@@ -9,6 +9,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/types.h>
 #include <linux/cpuoffline.h>
 #include <linux/slab.h>
 #include <linux/hrtimer.h>
@@ -63,28 +64,29 @@ static void avgload_do_work(struct avgload_instance *instance)
 {
 	unsigned int cpu;
 	cputime64_t cur_time_wall, cur_time_idle;
-	unsigned int delta_wall, delta_idle;
-	unsigned int load = 0;
+	//unsigned int delta_wall, delta_idle;
+	cputime64_t delta_wall, delta_idle;
+	u64 load = 0;
 	//struct avgload_partition_data *partition_data;
 	struct cpuoffline_partition *partition = instance->partition;
-	struct avgload_cpu_data *cpu_data;
+	//struct avgload_cpu_data *cpu_data;
 	struct cpumask partition_online_mask;
 	struct cpumask partition_hotplug_mask;
 	struct cpumask cpu_offline_mask;
 
-	pr_err("%s: here\n", __func__);
+	//pr_err("%s: here\n", __func__);
 
 	if (!instance || !partition) {
 		pr_err("%s: data does not exist\n", __func__);
 		return;
 	}
 
-	pr_err("%s: weight of cpu_online_mask is %d\n", __func__, cpumask_weight(cpu_online_mask));
-	pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));
+	/*pr_err("%s: weight of cpu_online_mask is %d\n", __func__, cpumask_weight(cpu_online_mask));
+	pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));*/
 	/* find cpu's in this partition that are online */
 	cpumask_and(&partition_online_mask, cpu_online_mask, partition->cpus);
 
-	pr_err("%s: weight of partition_online_mask is %d\n", __func__, cpumask_weight(&partition_online_mask));
+	/*pr_err("%s: weight of partition_online_mask is %d\n", __func__, cpumask_weight(&partition_online_mask));*/
 	if (!cpumask_weight(&partition_online_mask)) {
 		pr_err("%s: no cpus are online in this partition.  aborting\n",
 				__func__);
@@ -92,31 +94,62 @@ static void avgload_do_work(struct avgload_instance *instance)
 	}
 
 	for_each_cpu(cpu, &partition_online_mask) {
-		pr_err("%s: in the loop with CPU%d\n", __func__, cpu);
-		cpu_data = &per_cpu(avgload_data, cpu);
+		pr_err("%s: CPU%d\n", __func__, cpu);
+		//cpu_data = &per_cpu(avgload_data, cpu);
 
+		//pr_err("%s: instance->prev_time_wall points to %p, cpu_data->prev_time_idle points to %p\n", __func__, &instance->prev_time_wall, &cpu_data->prev_time_idle);
 		cur_time_idle = get_cpu_idle_time_us(cpu, &cur_time_wall);
+		//pr_err("%s: cur_time_idle is %lu\n", __func__, cur_time_idle);
 
-		pr_err("%s: cur_time_wall is %lu\n", __func__, cur_time_wall);
 
-		pr_err("%s: instance->prev_time_wall is %lu\n", __func__,
+
+		pr_err("%s: cur_time_wall is %llu, instance->prev_time_wall is %llu\n",
+				__func__, cur_time_wall, instance->prev_time_wall);
+
+		delta_wall = cputime64_sub(cur_time_wall,
 				instance->prev_time_wall);
 
-		delta_wall = (unsigned int) cputime64_sub(cur_time_wall,
-				instance->prev_time_wall);
+		pr_err("%s: cur_time_wall is %llu, instance->prev_time_wall is %llu, delta_wall is %llu\n",
+				__func__, cur_time_wall, instance->prev_time_wall, delta_wall);
 
-		delta_idle = (unsigned int) cputime64_sub(cur_time_idle,
-				cpu_data->prev_time_idle);
 
-		if (!delta_wall || delta_wall < delta_idle)
+		pr_err("%s: cur_time_idle is %llu, prev_time_idle is %llu\n",
+				__func__, cur_time_idle, per_cpu(avgload_data, cpu).prev_time_idle);
+
+		delta_idle = cputime64_sub(cur_time_idle,
+				per_cpu(avgload_data, cpu).prev_time_idle);
+
+		pr_err("%s: cur_time_idle is %llu, prev_time_idle is %llu, delta_idle is %llu\n",
+				__func__, cur_time_idle, per_cpu(avgload_data, cpu).prev_time_idle, delta_idle);
+
+		per_cpu(avgload_data, cpu).prev_time_idle = cur_time_idle;
+
+		if (!delta_wall || delta_wall < delta_idle) {
+			pr_err("%s: rollover\n", __func__);
 			continue;
+		}
 
-		load += 100 * (delta_wall - delta_idle) / delta_wall;
+		//load += 100 * (delta_wall - delta_idle) / delta_wall;
+		/*load += 100 * cputime_div(cputime_sub(delta_wall, delta_idle),
+				delta_wall);*/
+		//load += 100 * do_div((delta_wall - delta_idle), delta_wall);
+		//cputime64_t delta_delta = delta_wall - delta_idle;
+		cputime64_t delta_delta = delta_idle * 100;
+		pr_err("%s: delta_idle * 100 is %llu\n", __func__, delta_delta);
+		//cputime64_t delta_div = do_div(delta_delta, delta_wall);
+		do_div(delta_delta, delta_wall);
+		pr_err("%s: (delta_idle * 100) / delta_wall is %llu\n", __func__, delta_delta);
+		load += (100 - delta_delta);
+		//load = 100 - load;
+		pr_err("%s: load has become %llu\n", __func__, load);
 	}
 
+	instance->prev_time_wall = cur_time_wall;
+	pr_err("%s: instance->prev_time_wall is %llu\n", __func__, instance->prev_time_wall);
+
 	/* average the load */
-	load /= cpumask_weight(&partition_online_mask);
-	pr_err("%s: load is %u\n", __func__, load);
+	do_div(load, cpumask_weight(&partition_online_mask));
+	pr_err("%s: load is %llu\n", __func__, load);
 
 	/* bring a cpu back online */
 	if (load > instance->online_threshold) {
@@ -164,9 +197,9 @@ static void do_avgload_timer(struct work_struct *work)
 		container_of(work, struct avgload_instance, work.work);
 	struct cpuoffline_partition *partition = instance->partition;
 
-	pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));
+	/*pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));
 	pr_err("%s: instance is %p\n", __func__, instance);
-	pr_err("%s: partition is %p\n", __func__, partition);
+	pr_err("%s: partition is %p\n", __func__, partition);*/
 	//pr_err("%s: partition->private_data is %p\n", partition->private_data);
 	mutex_lock(&instance->timer_mutex);
 
@@ -245,7 +278,7 @@ static int cpuoffline_avgload_start(struct cpuoffline_partition *partition)
 		pr_err("%s: cpu is %d\n", __func__, cpu);
 		cpu_data = &per_cpu(avgload_data, cpu);
 
-		cpu_data->prev_time_idle = get_cpu_idle_time_us(cpu,
+		cpu_data->prev_time_idle = (cputime_t) get_cpu_idle_time_us(cpu,
 				&instance->prev_time_wall);
 	}
 
