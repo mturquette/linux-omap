@@ -1,5 +1,5 @@
 /*
- * CPU Offline framework core
+ * CPU Offline Average Load governor
  *
  * Copyright (C) 2011 Texas Instruments, Inc.
  * Mike Turquette <mturquette@ti.com>
@@ -18,30 +18,12 @@
 
 #include <asm/cputime.h>
 
-//#include <linux/sched.h>
-
-/*
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/init.h>
-#include <linux/cpufreq.h>
-#include <linux/cpu.h>
-#include <linux/jiffies.h>
-#include <linux/kernel_stat.h>
-#include <linux/mutex.h>
-#include <linux/hrtimer.h>
-#include <linux/tick.h>
-#include <linux/ktime.h>
-#include <linux/sched.h>
-*/
-
 #define AVGLOAD_DEFAULT_SAMPLING_RATE		1000000
 #define AVGLOAD_DEFAULT_ONLINE_THRESHOLD	80
 #define AVGLOAD_DEFAULT_OFFLINE_THRESHOLD	20
 
 DEFINE_MUTEX(avgload_mutex);
 
-/* XXX partition->private_data should point to this */
 struct avgload_instance {
 	struct cpuoffline_partition *partition;
 	cputime64_t prev_time_wall;
@@ -58,110 +40,77 @@ struct avgload_cpu_data {
 };
 
 /* XXX this seems pretty inefficient... */
-DEFINE_PER_CPU(struct avgload_cpu_data, avgload_data);
+static DEFINE_PER_CPU(struct avgload_cpu_data, avgload_data);
 
 static void avgload_do_work(struct avgload_instance *instance)
 {
 	unsigned int cpu;
 	cputime64_t cur_time_wall, cur_time_idle;
-	//unsigned int delta_wall, delta_idle;
 	cputime64_t delta_wall, delta_idle;
 	u64 load = 0;
-	//struct avgload_partition_data *partition_data;
 	struct cpuoffline_partition *partition = instance->partition;
-	//struct avgload_cpu_data *cpu_data;
-	struct cpumask partition_online_mask;
-	struct cpumask partition_hotplug_mask;
-	struct cpumask cpu_offline_mask;
-
-	//pr_err("%s: here\n", __func__);
+	struct cpumask mask;
 
 	if (!instance || !partition) {
-		pr_err("%s: data does not exist\n", __func__);
+		pr_warning("%s: data does not exist\n", __func__);
 		return;
 	}
 
-	/*pr_err("%s: weight of cpu_online_mask is %d\n", __func__, cpumask_weight(cpu_online_mask));
-	pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));*/
-	/* find cpu's in this partition that are online */
-	cpumask_and(&partition_online_mask, cpu_online_mask, partition->cpus);
+	/* find CPUs in this partition that are online */
+	cpumask_and(&mask, cpu_online_mask, partition->cpus);
 
-	/*pr_err("%s: weight of partition_online_mask is %d\n", __func__, cpumask_weight(&partition_online_mask));*/
-	if (!cpumask_weight(&partition_online_mask)) {
+	/* this should only happen if CPUs are offlined from userspace */
+	if (!cpumask_weight(&mask)) {
 		pr_err("%s: no cpus are online in this partition.  aborting\n",
 				__func__);
 		return;
 	}
 
-	for_each_cpu(cpu, &partition_online_mask) {
-		pr_err("%s: CPU%d\n", __func__, cpu);
-		//cpu_data = &per_cpu(avgload_data, cpu);
-
-		//pr_err("%s: instance->prev_time_wall points to %p, cpu_data->prev_time_idle points to %p\n", __func__, &instance->prev_time_wall, &cpu_data->prev_time_idle);
+	/* determine load for all online CPUs in the partition */
+	for_each_cpu(cpu, &mask) {
 		cur_time_idle = get_cpu_idle_time_us(cpu, &cur_time_wall);
-		//pr_err("%s: cur_time_idle is %lu\n", __func__, cur_time_idle);
-
-
-
-		pr_err("%s: cur_time_wall is %llu, instance->prev_time_wall is %llu\n",
-				__func__, cur_time_wall, instance->prev_time_wall);
 
 		delta_wall = cputime64_sub(cur_time_wall,
 				instance->prev_time_wall);
-
-		pr_err("%s: cur_time_wall is %llu, instance->prev_time_wall is %llu, delta_wall is %llu\n",
-				__func__, cur_time_wall, instance->prev_time_wall, delta_wall);
-
-
-		pr_err("%s: cur_time_idle is %llu, prev_time_idle is %llu\n",
-				__func__, cur_time_idle, per_cpu(avgload_data, cpu).prev_time_idle);
-
 		delta_idle = cputime64_sub(cur_time_idle,
 				per_cpu(avgload_data, cpu).prev_time_idle);
 
-		pr_err("%s: cur_time_idle is %llu, prev_time_idle is %llu, delta_idle is %llu\n",
-				__func__, cur_time_idle, per_cpu(avgload_data, cpu).prev_time_idle, delta_idle);
-
 		per_cpu(avgload_data, cpu).prev_time_idle = cur_time_idle;
 
-		if (!delta_wall || delta_wall < delta_idle) {
-			pr_err("%s: rollover\n", __func__);
+		/* rollover happens often when bringing a CPU back online */
+		if (!delta_wall || delta_wall < delta_idle)
 			continue;
-		}
 
-		//load += 100 * (delta_wall - delta_idle) / delta_wall;
-		/*load += 100 * cputime_div(cputime_sub(delta_wall, delta_idle),
-				delta_wall);*/
-		//load += 100 * do_div((delta_wall - delta_idle), delta_wall);
-		//cputime64_t delta_delta = delta_wall - delta_idle;
-		cputime64_t delta_delta = delta_idle * 100;
-		pr_err("%s: delta_idle * 100 is %llu\n", __func__, delta_delta);
-		//cputime64_t delta_div = do_div(delta_delta, delta_wall);
-		do_div(delta_delta, delta_wall);
-		pr_err("%s: (delta_idle * 100) / delta_wall is %llu\n", __func__, delta_delta);
-		load += (100 - delta_delta);
-		//load = 100 - load;
-		pr_err("%s: load has become %llu\n", __func__, load);
+		/* aggregate load */
+		delta_idle = 100 * (delta_wall - delta_idle);
+		do_div(delta_idle, delta_wall);
+		load += delta_idle;
 	}
 
+	/* save last timestamp for next iteration */
 	instance->prev_time_wall = cur_time_wall;
-	pr_err("%s: instance->prev_time_wall is %llu\n", __func__, instance->prev_time_wall);
 
 	/* average the load */
-	do_div(load, cpumask_weight(&partition_online_mask));
-	pr_err("%s: load is %llu\n", __func__, load);
+	do_div(load, cpumask_weight(&mask));
 
 	/* bring a cpu back online */
 	if (load > instance->online_threshold) {
-		/* which cpu's are offline and support hotplug? */
-		cpumask_complement(&cpu_offline_mask, cpu_online_mask);
-		cpumask_and(&partition_hotplug_mask,
-				&cpu_offline_mask, cpu_hotpluggable_mask);
+		/* which CPUs are offline? */
+		cpumask_complement(&mask, cpu_online_mask);
 
-		/* pick a CPU from the partition that come back online */
-		cpu = cpumask_any_and(&partition_hotplug_mask, partition->cpus);
+		/* which offline CPUs are in this partition? */
+		cpumask_and(&mask, &mask, partition->cpus);
 
-		pr_err("%s: CPU%d up\n", __func__, cpu);
+		/* which offline CPUs in this partition can hotplug? */
+		cpumask_and(&mask, &mask, cpu_hotpluggable_mask);
+
+		/* bail out if all CPUs are online */
+		if (!cpumask_weight(&mask))
+			return;
+
+		/* pick a "random" CPU to bring online */
+		cpu = cpumask_any(&mask);
+
 		cpu_up(cpu);
 
 		return;
@@ -169,14 +118,15 @@ static void avgload_do_work(struct avgload_instance *instance)
 
 	/* take a cpu offline */
 	if (load < instance->offline_threshold) {
-		/* which cpu's are online and support hotplug? */
-		cpumask_and(&partition_hotplug_mask,
-				cpu_online_mask, cpu_hotpluggable_mask);
+		/* can any of those CPUs hotplug? */
+		cpumask_and(&mask, &mask, cpu_hotpluggable_mask);
 
-		/* pick a CPU from the partition that can go offline */
-		cpu = cpumask_any_and(&partition_hotplug_mask, partition->cpus);
+		if (!cpumask_weight(&mask))
+			return;
 
-		pr_err("%s: CPU%d down\n", __func__, cpu);
+		/* pick a "random" CPU to go offline */
+		cpu = cpumask_any(&mask);
+
 		cpu_down(cpu);
 
 		return;
@@ -186,21 +136,9 @@ static void avgload_do_work(struct avgload_instance *instance)
 static void do_avgload_timer(struct work_struct *work)
 {
 	int delay;
-#if 0
-	struct avgload_partition_data *data =
-		container_of(work, struct avgload_partition_data, work.work);
-	struct cpuoffline_partition *partition = container_of((void *)data,
-			struct cpuoffline_partition, private_data);
-#endif
-
 	struct avgload_instance *instance =
 		container_of(work, struct avgload_instance, work.work);
-	struct cpuoffline_partition *partition = instance->partition;
 
-	/*pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));
-	pr_err("%s: instance is %p\n", __func__, instance);
-	pr_err("%s: partition is %p\n", __func__, partition);*/
-	//pr_err("%s: partition->private_data is %p\n", partition->private_data);
 	mutex_lock(&instance->timer_mutex);
 
 	/* do the work */
@@ -228,32 +166,9 @@ static void avgload_timer_exit(struct avgload_instance *instance)
 static int cpuoffline_avgload_start(struct cpuoffline_partition *partition)
 {
 	struct cpuoffline_governor *gov;
-	//struct avgload_partition_data *partition_data;
 	struct avgload_instance *instance;
 	struct avgload_cpu_data *cpu_data;
 	int cpu;
-
-	pr_err("%s: weight of partition->cpus is %d\n", __func__, cpumask_weight(partition->cpus));
-	/* XXX kick off wq that prints hello, world */
-	pr_err("%s: OMG HI2U\n", __func__);
-
-#if 0
-	/* XXX where does private_data get allocated?  here? */
-	if (!partition->private_data) {
-		pr_err("%s: no partition data\n", __func__);
-		partition->private_data =
-			kmalloc(sizeof(struct avgload_partition_data),
-					GFP_KERNEL);
-	}
-
-	if (!partition->private_data) {
-		pr_err("%s: bummer, no memory\n", __func__);
-		return -ENOMEM;
-	}
-
-	pr_err("%s: partition->private_data is %p\n", __func__, partition->private_data);
-	partition_data = partition->private_data;
-#endif
 
 	instance = kmalloc(sizeof(struct avgload_instance), GFP_KERNEL);
 	if (!instance)
@@ -267,15 +182,17 @@ static int cpuoffline_avgload_start(struct cpuoffline_partition *partition)
 
 	mutex_lock(&avgload_mutex);
 
-	instance->partition = partition;
+	/* initialize defaults */
 	instance->sampling_rate = AVGLOAD_DEFAULT_SAMPLING_RATE;
 	instance->online_threshold = AVGLOAD_DEFAULT_ONLINE_THRESHOLD;
 	instance->offline_threshold = AVGLOAD_DEFAULT_OFFLINE_THRESHOLD;
-	//instance->prev_time_wall = ktime_to_us(ktime_get());
+
+	/* remember who we are */
+	instance->partition = partition;
+	partition->private_data = instance;
 
 	/* populate idle times before kicking off the workqueue */
 	for_each_cpu(cpu, partition->cpus) {
-		pr_err("%s: cpu is %d\n", __func__, cpu);
 		cpu_data = &per_cpu(avgload_data, cpu);
 
 		cpu_data->prev_time_idle = (cputime_t) get_cpu_idle_time_us(cpu,
@@ -294,8 +211,21 @@ static int cpuoffline_avgload_start(struct cpuoffline_partition *partition)
 
 static int cpuoffline_avgload_stop(struct cpuoffline_partition *partition)
 {
-	/* XXX stop workqueue and print "finished" */
-	pr_err("%s: OMG BAI2U\n", __func__);
+	struct avgload_instance *instance = partition->private_data;
+
+	if (!instance)
+		return -EINVAL;
+
+	mutex_lock(&instance->timer_mutex);
+	avgload_timer_exit(instance);
+	mutex_unlock(&instance->timer_mutex);
+
+	mutex_lock(&partition->mutex);
+	partition->private_data = NULL;
+	mutex_unlock(&partition->mutex);
+
+	kfree(instance);
+
 	return 0;
 }
 
@@ -308,12 +238,13 @@ struct cpuoffline_governor cpuoffline_governor_avgload = {
 
 static int __init cpuoffline_avgload_init(void)
 {
-	pr_err("%s: registering avload\n", __func__);
+	pr_notice("%s: registering avgload\n", __func__);
 	return cpuoffline_register_governor(&cpuoffline_governor_avgload);
 }
 
 static void __exit cpuoffline_avgload_exit(void)
 {
+	pr_notice("%s: unregistering avgload\n", __func__);
 	cpuoffline_unregister_governor(&cpuoffline_governor_avgload);
 }
 

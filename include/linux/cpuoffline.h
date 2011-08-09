@@ -30,24 +30,7 @@ struct cpuoffline_governor {
 	int (*start)(struct cpuoffline_partition *partition);
 	int (*stop)(struct cpuoffline_partition *partition);
 	struct kobject kobj;
-#if 0
-	int (*governor)(struct cpufreq_policy *policy,
-			unsigned int event);
-	ssize_t (*show_setspeed)        (struct cpufreq_policy *policy,
-			char *buf);
-	int     (*store_setspeed)       (struct cpufreq_policy *policy,
-			unsigned int freq);
-	unsigned int max_transition_latency; /* HW must be able to switch to
-						next freq faster than this value in nano secs or we
-						will fallback to performance governor */
-#endif
 };
-
-#if 0
-struct cpuoffline_governor {
-	char		name[MAX_NAME_LEN];
-};
-#endif
 
 /**
  * cpuoffline_parition - set of CPUs affected by a CPUoffline governor
@@ -71,13 +54,12 @@ struct cpuoffline_partition {
 	struct completion		kobj_unregister;
 
 	struct mutex			mutex;
-	/* XXX hack for testing */
-	/*char				gov_string[MAX_NAME_LEN];*/
-	/* used by the governor to store per-partition data */
-	//void *				private_data;
+
+	void *				private_data;
 };
 
 struct cpuoffline_driver {
+	char name[MAX_NAME_LEN];
 	int (*init)(struct cpuoffline_partition *partition);
 	int (*exit)(struct cpuoffline_partition *partition);
 };
