@@ -1980,6 +1980,8 @@ endif
 
 source "drivers/cpuidle/Kconfig"
 
+source "drivers/cpuoffline/Kconfig"
+
 endmenu
 
 menu "Floating point emulation"
