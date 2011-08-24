@@ -149,6 +149,21 @@ extern struct clk_hw_ops clk_gate_ops;
 struct clk *clk_register(struct clk_hw_ops *ops, struct clk_hw *hw,
 			 const char *name);
 
+/**
+ * clk_unregister - remove a clock
+ *
+ * @clk: clock to unregister
+ *
+ * Remove a clock from the clk subsystem.  This is currently not
+ * implemented but is provided to allow unregistration code to be
+ * written in drivers ready for use when an implementation is
+ * provided.
+ */
+static inline int clk_unregister(struct clk *clk)
+{
+	return -ENOTSUPP;
+}
+
 #else /* !CONFIG_GENERIC_CLK */
 
 /*
