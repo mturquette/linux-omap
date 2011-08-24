@@ -13,6 +13,7 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/device.h>
 
 struct clk {
 	const char		*name;
@@ -252,19 +253,43 @@ int clk_set_parent(struct clk *clk, struct clk *parent)
 }
 EXPORT_SYMBOL_GPL(clk_set_parent);
 
-struct clk *clk_register(const struct clk_hw_ops *ops, struct clk_hw *hw,
-		const char *name)
+struct clk *clk_register(struct device *dev, const struct clk_hw_ops *ops,
+			 struct clk_hw *hw, const char *name)
 {
 	struct clk *clk;
+	char *new_name;
+	size_t name_len;
 
 	clk = kzalloc(sizeof(*clk), GFP_KERNEL);
 	if (!clk)
 		return NULL;
 
-	clk->name = name;
 	clk->ops = ops;
 	clk->hw = hw;
 	hw->clk = clk;
+
+	/* Since we currently match clock providers on a purely string
+	 * based method add a prefix based on the device name if a
+	 * device is provided.  When we have support for device tree
+	 * based clock matching it should be possible to avoid this
+	 * mangling and instead use the struct device to hook into
+	 * the bindings.
+	 *
+	 * As we don't currently support unregistering clocks we don't
+	 * need to worry about cleanup as yet.
+	 */
+	if (dev) {
+		name_len = strlen(name) + strlen(dev_name(dev)) + 2;
+		new_name = kzalloc(name_len, GFP_KERNEL);
+		if (!new_name)
+			goto err;
+
+		snprintf(new_name, name_len, "%s-%s", dev_name(dev), name);
+
+		clk->name = new_name;
+	} else {
+		clk->name = name;
+	}
 
 	/* Query the hardware for parent and initial rate. We may alter
 	 * the clock topology, making this clock available from the parent's
@@ -285,7 +310,10 @@ struct clk *clk_register(const struct clk_hw_ops *ops, struct clk_hw *hw,
 
 	mutex_unlock(&prepare_lock);
 
-
 	return clk;
+
+err:
+	kfree(clk);
+	return NULL;
 }
 EXPORT_SYMBOL_GPL(clk_register);

@@ -139,15 +139,21 @@ extern struct clk_hw_ops clk_gate_ops;
 /**
  * clk_register - register and initialize a new clock
  *
+ * @dev: device providing the clock or NULL
  * @ops: ops for the new clock
  * @hw: struct clk_hw to be passed to the ops of the new clock
  * @name: name to use for the new clock
  *
- * Register a new clock with the clk subsytem.  Returns either a
- * struct clk for the new clock or a NULL pointer.
+ * Register a new clock with the clk subsytem.  If dev is provided
+ * then it will be used to disambiguate between multiple instances of
+ * the same device in the system, typically this should only be done
+ * for devices that are not part of the core SoC unless device tree is
+ * in use.
+ *
+ * Returns either a struct clk for the new clock or a NULL pointer.
  */
-struct clk *clk_register(const struct clk_hw_ops *ops, struct clk_hw *hw,
-			 const char *name);
+struct clk *clk_register(struct device *dev, const struct clk_hw_ops *ops,
+			 struct clk_hw *hw, const char *name);
 
 /**
  * clk_unregister - remove a clock
