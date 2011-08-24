@@ -12,3 +12,7 @@ config GENERIC_CLK
 config GENERIC_CLK_FIXED
 	bool
 	depends on GENERIC_CLK
+
+config GENERIC_CLK_GATE
+	bool
+	depends on GENERIC_CLK

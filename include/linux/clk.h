@@ -124,6 +124,19 @@ extern struct clk_hw_ops clk_fixed_ops;
 
 #endif /* CONFIG_GENERIC_CLK_FIXED */
 
+#ifdef CONFIG_GENERIC_CLK_GATE
+
+struct clk_gate {
+	struct clk_hw	hw;
+	void __iomem	*reg;
+	u8		bit_idx;
+};
+
+extern struct clk_hw_ops clk_gate_ops;
+
+#endif /* CONFIG_GENERIC_CLK_GATE */
+
+
 #else /* !CONFIG_GENERIC_CLK */
 
 /*
