@@ -23,6 +23,13 @@
 static LIST_HEAD(clocks);
 static DEFINE_MUTEX(clocks_mutex);
 
+/* For USE_COMMON_STRUCT_CLK, these are provided in clk.c, but not exported
+ * through other headers; we don't want them used anywhere but here. */
+#ifdef CONFIG_USE_COMMON_STRUCT_CLK
+extern int __clk_get(struct clk *clk);
+extern void __clk_put(struct clk *clk);
+#endif
+
 /*
  * Find the correct struct clk for the device and connection ID.
  * We do slightly fuzzy matching here:
