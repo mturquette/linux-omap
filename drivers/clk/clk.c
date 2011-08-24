@@ -16,7 +16,7 @@
 
 struct clk {
 	const char		*name;
-	struct clk_hw_ops	*ops;
+	const struct clk_hw_ops	*ops;
 	struct clk_hw		*hw;
 	unsigned int		enable_count;
 	unsigned int		prepare_count;
@@ -252,7 +252,7 @@ int clk_set_parent(struct clk *clk, struct clk *parent)
 }
 EXPORT_SYMBOL_GPL(clk_set_parent);
 
-struct clk *clk_register(struct clk_hw_ops *ops, struct clk_hw *hw,
+struct clk *clk_register(const struct clk_hw_ops *ops, struct clk_hw *hw,
 		const char *name)
 {
 	struct clk *clk;

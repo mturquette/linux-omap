@@ -146,7 +146,7 @@ extern struct clk_hw_ops clk_gate_ops;
  * Register a new clock with the clk subsytem.  Returns either a
  * struct clk for the new clock or a NULL pointer.
  */
-struct clk *clk_register(struct clk_hw_ops *ops, struct clk_hw *hw,
+struct clk *clk_register(const struct clk_hw_ops *ops, struct clk_hw *hw,
 			 const char *name);
 
 /**
