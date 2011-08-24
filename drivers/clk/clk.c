@@ -21,6 +21,8 @@ struct clk {
 	unsigned int		enable_count;
 	unsigned int		prepare_count;
 	struct clk		*parent;
+	struct hlist_head	children;
+	struct hlist_node	child_node;
 	unsigned long		rate;
 };
 
@@ -176,10 +178,61 @@ long clk_round_rate(struct clk *clk, unsigned long rate)
 }
 EXPORT_SYMBOL_GPL(clk_round_rate);
 
+/*
+ * clk_recalc_rates - Given a clock (with a recently updated clk->rate),
+ *	notify its children that the rate may need to be recalculated, using
+ *	ops->recalc_rate().
+ */
+static void clk_recalc_rates(struct clk *clk)
+{
+	struct hlist_node *tmp;
+	struct clk *child;
+
+	if (clk->ops->recalc_rate)
+		clk->rate = clk->ops->recalc_rate(clk->hw);
+
+	hlist_for_each_entry(child, tmp, &clk->children, child_node)
+		clk_recalc_rates(child);
+}
+
 int clk_set_rate(struct clk *clk, unsigned long rate)
 {
-	/* not yet implemented */
-	return -ENOSYS;
+	unsigned long parent_rate, new_rate;
+	int ret;
+
+	if (!clk->ops->set_rate)
+		return -ENOSYS;
+
+	new_rate = rate;
+
+	/* prevent racing with updates to the clock topology */
+	mutex_lock(&prepare_lock);
+
+propagate:
+	ret = clk->ops->set_rate(clk->hw, new_rate, &parent_rate);
+
+	if (ret < 0)
+		return ret;
+
+	/* ops->set_rate may require the parent's rate to change (to
+	 * parent_rate), we need to propagate the set_rate call to the
+	 * parent.
+	 */
+	if (ret == CLK_SET_RATE_PROPAGATE) {
+		new_rate = parent_rate;
+		clk = clk->parent;
+		goto propagate;
+	}
+
+	/* If successful (including propagation to the parent clock(s)),
+	 * recalculate the rates of the clock, including children.  We'll be
+	 * calling this on the 'parent-most' clock that we propagated to.
+	 */
+	clk_recalc_rates(clk);
+
+	mutex_unlock(&prepare_lock);
+
+	return 0;
 }
 EXPORT_SYMBOL_GPL(clk_set_rate);
 
@@ -213,15 +266,24 @@ struct clk *clk_register(struct clk_hw_ops *ops, struct clk_hw *hw,
 	clk->hw = hw;
 	hw->clk = clk;
 
-	/* Query the hardware for parent and initial rate */
+	/* Query the hardware for parent and initial rate. We may alter
+	 * the clock topology, making this clock available from the parent's
+	 * children list. So, we need to protect against concurrent
+	 * accesses through set_rate
+	 */
+	mutex_lock(&prepare_lock);
 
-	if (clk->ops->get_parent)
-		/* We don't to lock against prepare/enable here, as
-		 * the clock is not yet accessible from anywhere */
+	if (clk->ops->get_parent) {
 		clk->parent = clk->ops->get_parent(clk->hw);
+		if (clk->parent)
+			hlist_add_head(&clk->child_node,
+					&clk->parent->children);
+	}
 
 	if (clk->ops->recalc_rate)
 		clk->rate = clk->ops->recalc_rate(clk->hw);
+
+	mutex_unlock(&prepare_lock);
 
 
 	return clk;

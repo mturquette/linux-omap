@@ -58,6 +58,12 @@ struct clk_hw {
  *		parent. Currently only called when the clock is first
  *		registered.
  *
+ * @set_rate	Change the rate of this clock. If this callback returns
+ *		CLK_SET_RATE_PROPAGATE, the rate change will be propagated to
+ *		the parent clock (which may propagate again). The requested
+ *		rate of the parent is passed back from the callback in the
+ *		second 'unsigned long *' argument.
+ *
  * The clk_enable/clk_disable and clk_prepare/clk_unprepare pairs allow
  * implementations to split any work between atomic (enable) and sleepable
  * (prepare) contexts.  If a clock requires sleeping code to be turned on, this
@@ -76,7 +82,13 @@ struct clk_hw_ops {
 	void		(*disable)(struct clk_hw *);
 	unsigned long	(*recalc_rate)(struct clk_hw *);
 	long		(*round_rate)(struct clk_hw *, unsigned long);
+	int		(*set_rate)(struct clk_hw *,
+					unsigned long, unsigned long *);
 	struct clk *	(*get_parent)(struct clk_hw *);
+};
+
+enum {
+	CLK_SET_RATE_PROPAGATE = 1,
 };
 
 /**
