@@ -8,3 +8,7 @@ config HAVE_MACH_CLKDEV
 
 config GENERIC_CLK
 	bool
+
+config GENERIC_CLK_FIXED
+	bool
+	depends on GENERIC_CLK
