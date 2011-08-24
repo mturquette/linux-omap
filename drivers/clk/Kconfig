@@ -13,6 +13,7 @@ config GENERIC_CLK_BUILD_TEST
 	depends on EXPERIMENTAL && GENERIC_CLK
 	select GENERIC_CLK_FIXED
 	select GENERIC_CLK_GATE
+	select GENERIC_CLK_WM831X if MFD_WM831X=y
 	help
 	   Enable all possible generic clock drivers.  This is only
 	   useful for improving build coverage, it is not useful for
@@ -25,3 +26,7 @@ config GENERIC_CLK_FIXED
 config GENERIC_CLK_GATE
 	bool
 	depends on GENERIC_CLK
+
+config GENERIC_CLK_WM831X
+	tristate
+	depends on GENERIC_CLK && MFD_WM831X
