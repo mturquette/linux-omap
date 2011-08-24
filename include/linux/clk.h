@@ -136,6 +136,18 @@ extern struct clk_hw_ops clk_gate_ops;
 
 #endif /* CONFIG_GENERIC_CLK_GATE */
 
+/**
+ * clk_register - register and initialize a new clock
+ *
+ * @ops: ops for the new clock
+ * @hw: struct clk_hw to be passed to the ops of the new clock
+ * @name: name to use for the new clock
+ *
+ * Register a new clock with the clk subsytem.  Returns either a
+ * struct clk for the new clock or a NULL pointer.
+ */
+struct clk *clk_register(struct clk_hw_ops *ops, struct clk_hw *hw,
+			 const char *name);
 
 #else /* !CONFIG_GENERIC_CLK */
 
