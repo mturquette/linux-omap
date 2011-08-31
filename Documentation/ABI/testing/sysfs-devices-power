@@ -165,3 +165,40 @@ Description:
 
 		Not all drivers support this attribute.  If it isn't supported,
 		attempts to read or write it will yield I/O errors.
+
+What:		/sys/devices/.../power/devfreq_governor
+Date:		July 2011
+Contact:	MyungJoo Ham <myungjoo.ham@samsung.com>
+Description:
+		The /sys/devices/.../power/devfreq_governor shows the name
+		of the governor used by the corresponding device.
+
+What:		/sys/devices/.../power/devfreq_cur_freq
+Date:		July 2011
+Contact:	MyungJoo Ham <myungjoo.ham@samsung.com>
+Description:
+		The /sys/devices/.../power/devfreq_cur_freq shows the current
+		frequency of the corresponding device.
+
+What:		/sys/devices/.../power/devfreq_max_freq
+Date:		July 2011
+Contact:	MyungJoo Ham <myungjoo.ham@samsung.com>
+Description:
+		The /sys/devices/.../power/devfreq_max_freq shows the
+		maximum operable frequency of the corresponding device.
+
+What:		/sys/devices/.../power/devfreq_min_freq
+Date:		July 2011
+Contact:	MyungJoo Ham <myungjoo.ham@samsung.com>
+Description:
+		The /sys/devices/.../power/devfreq_min_freq shows the
+		minimum operable frequency of the corresponding device.
+
+What:		/sys/devices/.../power/devfreq_polling_interval
+Date:		July 2011
+Contact:	MyungJoo Ham <myungjoo.ham@samsung.com>
+Description:
+		The /sys/devices/.../power/devfreq_polling_interval sets and
+		shows the requested polling interval of the corresponding
+		device. The values are represented in ms. If the value is less
+		than 1 jiffy, it is considered to be 0, which means no polling.
