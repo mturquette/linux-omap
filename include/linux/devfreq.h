@@ -105,6 +105,37 @@ extern int devfreq_add_device(struct device *dev,
 			   struct devfreq_governor *governor,
 			   void *data);
 extern int devfreq_remove_device(struct device *dev);
+
+#ifdef CONFIG_DEVFREQ_GOV_POWERSAVE
+extern struct devfreq_governor devfreq_powersave;
+#endif
+#ifdef CONFIG_DEVFREQ_GOV_PERFORMANCE
+extern struct devfreq_governor devfreq_performance;
+#endif
+#ifdef CONFIG_DEVFREQ_GOV_USERSPACE
+extern struct devfreq_governor devfreq_userspace;
+#endif
+#ifdef CONFIG_DEVFREQ_GOV_SIMPLE_ONDEMAND
+extern struct devfreq_governor devfreq_simple_ondemand;
+/**
+ * struct devfreq_simple_ondemand_data - void *data fed to struct devfreq
+ *	and devfreq_add_device
+ * @ upthreshold	If the load is over this value, the frequency jumps.
+ *			Specify 0 to use the default. Valid value = 0 to 100.
+ * @ downdifferential	If the load is under upthreshold - downdifferential,
+ *			the governor may consider slowing the frequency down.
+ *			Specify 0 to use the default. Valid value = 0 to 100.
+ *			downdifferential < upthreshold must hold.
+ *
+ * If the fed devfreq_simple_ondemand_data pointer is NULL to the governor,
+ * the governor uses the default values.
+ */
+struct devfreq_simple_ondemand_data {
+	unsigned int upthreshold;
+	unsigned int downdifferential;
+};
+#endif
+
 #else /* !CONFIG_PM_DEVFREQ */
 static int devfreq_add_device(struct device *dev,
 			   struct devfreq_dev_profile *profile,
@@ -118,6 +149,12 @@ static int devfreq_remove_device(struct device *dev)
 {
 	return 0;
 }
+
+#define devfreq_powersave	NULL
+#define devfreq_performance	NULL
+#define devfreq_userspace	NULL
+#define devfreq_simple_ondemand	NULL
+
 #endif /* CONFIG_PM_DEVFREQ */
 
 #endif /* __LINUX_DEVFREQ_H__ */

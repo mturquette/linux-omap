@@ -202,3 +202,12 @@ Description:
 		shows the requested polling interval of the corresponding
 		device. The values are represented in ms. If the value is less
 		than 1 jiffy, it is considered to be 0, which means no polling.
+
+What:		/sys/devices/.../power/devfreq_userspace_set_freq
+Date:		August 2011
+Contact:	MyungJoo Ham <myungjoo.ham@samsung.com>
+Description:
+		The /sys/devices/.../power/devfreq_userspace_set_freq sets
+		and shows the user specified frequency in kHz. This sysfs
+		entry is created and managed by userspace DEVFREQ governor.
+		If other governors are used, it won't be supported.
